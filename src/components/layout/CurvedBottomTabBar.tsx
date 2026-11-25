@@ -1,5 +1,13 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { ArrowLeftRight, Home, PieChart, Sparkles, Wallet } from 'lucide-react-native';
@@ -144,6 +152,18 @@ export function CurvedBottomTabBar({
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
   const aiScale = useSharedValue(1);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, () => setIsKeyboardVisible(true));
+    const hideSub = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const bottomInset = Math.max(insets.bottom, 6);
   const barHeight = 68 + bottomInset;
@@ -153,6 +173,10 @@ export function CurvedBottomTabBar({
   const aiAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: aiScale.value }],
   }));
+
+  if (isKeyboardVisible) {
+    return null;
+  }
 
   const navigateToRoute = (routeKey: string, routeName: string, isFocused: boolean) => {
     const event = navigation?.emit?.({

@@ -247,7 +247,7 @@ export default function AiChatbotScreen() {
         <View
           style={[
             styles.composerDock,
-            { paddingBottom: isKeyboardOpen ? 10 : 104 + insets.bottom },
+            { paddingBottom: isKeyboardOpen ? 12 : 104 + insets.bottom },
           ]}
         >
           {!isKeyboardOpen ? (
