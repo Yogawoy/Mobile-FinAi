@@ -1,17 +1,16 @@
+import React from 'react';
 import { Link, Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
-
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, Text, View } from 'react-native';
+import { Colors, FontFamily, Spacing } from '@/src/theme/tokens';
 
 export default function NotFoundScreen() {
   return (
     <>
-      <Stack.Screen options={{ title: 'Oops!' }} />
+      <Stack.Screen options={{ title: 'Halaman Tidak Ditemukan' }} />
       <View style={styles.container}>
-        <Text style={styles.title}>This screen doesn't exist.</Text>
-
-        <Link href="/" style={styles.link}>
-          <Text style={styles.linkText}>Go to home screen!</Text>
+        <Text style={styles.title}>Halaman tidak ditemukan.</Text>
+        <Link href="/(tabs)" style={styles.link}>
+          <Text style={styles.linkText}>Kembali ke Beranda</Text>
         </Link>
       </View>
     </>
@@ -21,20 +20,24 @@ export default function NotFoundScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.canvas,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    padding: Spacing.xl,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: FontFamily.bold,
+    fontSize: 18,
+    color: Colors.textPrimary,
   },
   link: {
-    marginTop: 15,
-    paddingVertical: 15,
+    marginTop: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
   },
   linkText: {
+    fontFamily: FontFamily.semibold,
     fontSize: 14,
-    color: '#2e78b7',
+    color: Colors.primary,
   },
 });

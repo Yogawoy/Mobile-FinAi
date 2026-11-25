@@ -1,12 +1,12 @@
 {
   "expo": {
-    "name": "smart-finance-mobile",
+    "name": "Smart Finance",
     "slug": "smart-finance-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "smartfinancemobile",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
     },
