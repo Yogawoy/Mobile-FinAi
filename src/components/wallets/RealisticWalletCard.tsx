@@ -9,10 +9,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
-import { formatIDR } from '@/src/lib/format';
-import { type WalletItem } from '@/src/lib/mockData';
-import { getWalletTheme } from '@/src/lib/walletTheme';
-import { FontFamily, Motion, Typography } from '@/src/theme/tokens';
+import { WalletBrandLogo } from '@/components/ui/WalletBrandLogo';
+import { formatIDR } from '@/lib/format';
+import { type WalletItem } from '@/lib/mockData';
+import { useResponsive } from '@/lib/responsive';
+import { getWalletTheme } from '@/lib/walletTheme';
+import { FontFamily, Motion, Typography } from '@/theme/tokens';
 
 interface RealisticWalletCardProps {
   wallet: WalletItem;
@@ -58,6 +60,7 @@ export function RealisticWalletCard({
   compact = false,
   onPress,
 }: RealisticWalletCardProps) {
+  const { isSmallWidth } = useResponsive();
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
   const theme = getWalletTheme(wallet.type, wallet.colorKey);
@@ -78,7 +81,11 @@ export function RealisticWalletCard({
         colors={theme.gradient}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
-        style={[styles.card, compact && styles.cardCompact]}
+        style={[
+          styles.card,
+          isSmallWidth && styles.cardSmall,
+          compact && styles.cardCompact,
+        ]}
       >
         {/* Diagonal translucent sheen */}
         <LinearGradient
@@ -117,13 +124,23 @@ export function RealisticWalletCard({
           />
         </Svg>
 
-        {/* Top Row: Name + Sublabel | Platinum Emblem */}
+        {/* Top Row: Brand Logo + Name + Sublabel | Platinum Emblem */}
         <View style={styles.topRow}>
-          <View style={styles.nameBlock}>
-            <Text style={[styles.walletName, compact && styles.walletNameCompact]} numberOfLines={1}>
-              {wallet.name || 'Nama Dompet'}
-            </Text>
-            <Text style={styles.subLabel}>{theme.subLabel}</Text>
+          <View style={styles.topLeftBrandRow}>
+            <View style={styles.brandLogoFrame}>
+              <WalletBrandLogo
+                walletId={wallet.id}
+                walletName={wallet.name}
+                type={wallet.type}
+                size={compact ? 28 : 34}
+              />
+            </View>
+            <View style={styles.nameBlock}>
+              <Text style={[styles.walletName, compact && styles.walletNameCompact]} numberOfLines={1}>
+                {wallet.name || 'Nama Dompet'}
+              </Text>
+              <Text style={styles.subLabel}>{theme.subLabel}</Text>
+            </View>
           </View>
 
           <View style={styles.emblemGroup}>
@@ -153,6 +170,8 @@ export function RealisticWalletCard({
                 Typography.tabularNums,
               ]}
               numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.75}
             >
               {hideBalance ? 'Rp ••••••••' : formatIDR(wallet.balance)}
             </Text>
@@ -228,6 +247,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.25)',
   },
+  cardSmall: {
+    height: 184,
+    padding: 16,
+  },
   cardCompact: {
     height: 132,
     borderRadius: 18,
@@ -253,8 +276,22 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  topLeftBrandRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: 0,
+  },
+  brandLogoFrame: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
+    overflow: 'hidden',
+  },
   nameBlock: {
     flex: 1,
+    minWidth: 0,
   },
   walletName: {
     fontFamily: FontFamily.bold,

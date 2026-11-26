@@ -1,9 +1,9 @@
-import React from 'react';
+﻿import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AlertTriangle, Check, ShieldAlert, ShieldCheck, TrendingUp } from 'lucide-react-native';
 import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
-import { type AnomalyItem } from '@/src/lib/mockData';
-import { Colors, FontFamily, Radius, Typography } from '@/src/theme/tokens';
+import { type AnomalyItem } from '@/lib/mockData';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface AnomalySectionProps {
   anomalies: AnomalyItem[];

@@ -1,11 +1,17 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, ShieldAlert } from 'lucide-react-native';
-import { type ChatRichCardType } from '@/src/lib/mockAiChat';
-import { Colors, FontFamily, Radius, Typography } from '@/src/theme/tokens';
+import { AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react-native';
+import { formatIDR } from '@/lib/format';
+import {
+  computeLiveMetrics,
+  type ChatLiveContext,
+  type ChatRichCardType,
+} from '@/lib/mockAiChat';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface ChatRichCardProps {
   type: ChatRichCardType;
+  live?: ChatLiveContext;
 }
 
 const RECOMMENDATIONS = [
@@ -44,19 +50,30 @@ function KeyValueRow({
   );
 }
 
-export function ChatRichCard({ type }: ChatRichCardProps) {
+export function ChatRichCard({ type, live }: ChatRichCardProps) {
+  const m = computeLiveMetrics(live);
+
   if (type === 'SUMMARY') {
+    const scoreColor =
+      m.healthScore >= 80 ? Colors.income : Colors.warningText;
     return (
       <View style={styles.subCard}>
         <KeyValueRow
           label="Skor Kesehatan"
-          value="84 / 100 · Sehat"
-          valueColor={Colors.income}
+          value={`${m.healthScore} / 100 · ${m.healthLabel}`}
+          valueColor={scoreColor}
         />
-        <KeyValueRow label="Burn Rate Harian" value="Rp 125rb / hr" />
         <KeyValueRow
-          label="Sisa Anggaran Nov"
-          value="Rp 2.650.000"
+          label={live?.hasCompletedSetup ? 'Batas Aman Harian' : 'Burn Rate Harian'}
+          value={
+            live?.hasCompletedSetup
+              ? `${formatIDR(live.userProfile.safeDailyLimit)} / hr`
+              : `${formatIDR(m.burnRate)} / hr`
+          }
+        />
+        <KeyValueRow
+          label="Sisa Anggaran"
+          value={formatIDR(m.remainingBudget)}
           valueColor={Colors.primary}
           isLast
         />
@@ -65,18 +82,22 @@ export function ChatRichCard({ type }: ChatRichCardProps) {
   }
 
   if (type === 'FORECAST') {
+    const surplusPrefix = m.projectedSurplus >= 0 ? '+' : '-';
     return (
       <View style={styles.subCard}>
-        <KeyValueRow label="Burn Rate Harian" value="Rp 125rb / hr" />
+        <KeyValueRow
+          label="Laju Pengeluaran"
+          value={`${formatIDR(m.burnRate)} / hr`}
+        />
         <KeyValueRow
           label="Proyeksi Pengeluaran"
-          value="Rp 3.750.000"
+          value={formatIDR(m.projectedExpense)}
           valueColor={Colors.expense}
         />
         <KeyValueRow
-          label="Estimasi Sisa Akhir Bulan"
-          value="+Rp 2.450.000"
-          valueColor={Colors.income}
+          label="Estimasi Akhir Bulan"
+          value={`${surplusPrefix}${formatIDR(Math.abs(m.projectedSurplus))}`}
+          valueColor={m.projectedSurplus >= 0 ? Colors.income : Colors.expense}
           isLast
         />
       </View>
@@ -84,6 +105,72 @@ export function ChatRichCard({ type }: ChatRichCardProps) {
   }
 
   if (type === 'ANOMALY') {
+    if (live) {
+      const alerts = live.budgets.filter(
+        (b) => b.limit > 0 && (b.spent / b.limit) * 100 >= b.alertThresholdPct
+      );
+      if (alerts.length === 0) {
+        return (
+          <View style={styles.subCard}>
+            <View style={styles.alignedRow}>
+              <View style={[styles.iconBadge, { backgroundColor: Colors.incomeSoft }]}>
+                <ShieldCheck size={13} color={Colors.income} strokeWidth={2.1} />
+              </View>
+              <View style={styles.alignedBody}>
+                <Text style={[styles.alignedTitle, { color: Colors.incomeText }]}>
+                  Semua Kategori Aman
+                </Text>
+                <Text style={styles.alignedSub}>
+                  Belum ada kategori yang mendekati atau melewati batas anggaran.
+                </Text>
+              </View>
+            </View>
+          </View>
+        );
+      }
+
+      return (
+        <View style={styles.subCard}>
+          {alerts.slice(0, 3).map((b, idx) => {
+            const pct = Math.round((b.spent / b.limit) * 100);
+            const isOver = pct >= 100;
+            return (
+              <View
+                key={b.id}
+                style={[styles.alignedRow, idx > 0 && styles.rowTopDivider]}
+              >
+                <View
+                  style={[
+                    styles.iconBadge,
+                    { backgroundColor: isOver ? Colors.expenseSoft : Colors.warningSoft },
+                  ]}
+                >
+                  {isOver ? (
+                    <ShieldAlert size={13} color={Colors.expense} strokeWidth={2.1} />
+                  ) : (
+                    <AlertTriangle size={13} color={Colors.warning} strokeWidth={2.1} />
+                  )}
+                </View>
+                <View style={styles.alignedBody}>
+                  <Text
+                    style={[
+                      styles.alignedTitle,
+                      { color: isOver ? Colors.expenseText : Colors.warningText },
+                    ]}
+                  >
+                    {b.name} · {pct}%
+                  </Text>
+                  <Text style={styles.alignedSub}>
+                    Terpakai {formatIDR(b.spent)} dari batas {formatIDR(b.limit)}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      );
+    }
+
     return (
       <View style={styles.subCard}>
         <View style={styles.alignedRow}>
@@ -164,10 +251,13 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     color: '#64748B',
     flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   kvValue: {
     fontFamily: FontFamily.semibold,
     fontSize: 13.5,
+    flexShrink: 0,
   },
   alignedRow: {
     flexDirection: 'row',

@@ -1,8 +1,8 @@
-import React from 'react';
+﻿import React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Colors, FontFamily, Radius, Spacing, TouchTarget } from '@/src/theme/tokens';
+import { Colors, FontFamily, Radius, Spacing, TouchTarget } from '@/theme/tokens';
 
 interface MobileHeaderProps {
   isHome?: boolean;

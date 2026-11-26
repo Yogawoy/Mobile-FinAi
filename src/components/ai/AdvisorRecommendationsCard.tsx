@@ -1,7 +1,7 @@
-import React from 'react';
+﻿import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { type AiRecommendationItem } from '@/src/lib/mockData';
-import { Colors, FontFamily, Radius, Typography } from '@/src/theme/tokens';
+import { type AiRecommendationItem } from '@/lib/mockData';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface AdvisorRecommendationsCardProps {
   recommendations: AiRecommendationItem[];

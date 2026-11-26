@@ -1,9 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,7 +7,10 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { X } from 'lucide-react-native';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useFinance } from '@/context/FinanceContext';
+import { formatIDR } from '@/lib/format';
 import {
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -19,8 +18,8 @@ import {
   type TransactionItem,
   type TransactionMode,
   type WalletItem,
-} from '@/src/lib/mockData';
-import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/src/theme/tokens';
+} from '@/lib/mockData';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 export interface QuickTransactionSubmitPayload {
   id?: string;
@@ -41,6 +40,12 @@ interface QuickTransactionSheetProps {
   onSubmit: (payload: QuickTransactionSubmitPayload) => void;
 }
 
+function formatThousands(raw: string): string {
+  const digits = raw.replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
 export function QuickTransactionSheet({
   visible,
   initialMode,
@@ -49,8 +54,10 @@ export function QuickTransactionSheet({
   onClose,
   onSubmit,
 }: QuickTransactionSheetProps) {
+  const { showToast } = useToast();
+  const { categories: managedCategories } = useFinance();
   const [mode, setMode] = useState<TransactionMode>(initialMode);
-  const [amount, setAmount] = useState('');
+  const [amountText, setAmountText] = useState('');
   const [walletId, setWalletId] = useState(wallets[0]?.id || 'bca');
   const [targetWalletId, setTargetWalletId] = useState(wallets[1]?.id || 'gopay');
   const [categoryKey, setCategoryKey] = useState('utensils');
@@ -60,7 +67,7 @@ export function QuickTransactionSheet({
     if (!visible) return;
     if (editingTransaction) {
       setMode(editingTransaction.type);
-      setAmount(String(editingTransaction.amount));
+      setAmountText(formatThousands(String(editingTransaction.amount)));
       setWalletId(editingTransaction.walletId);
       setTargetWalletId(
         editingTransaction.targetWalletId ||
@@ -74,14 +81,26 @@ export function QuickTransactionSheet({
     }
 
     setMode(initialMode);
-    setAmount('');
+    setAmountText('');
     setWalletId(wallets[0]?.id || 'bca');
     setTargetWalletId(wallets[1]?.id || wallets[0]?.id || 'gopay');
     setCategoryKey(initialMode === 'INCOME' ? 'briefcase' : 'utensils');
     setNote('');
   }, [visible, initialMode, wallets, editingTransaction]);
 
-  const categories = mode === 'INCOME' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const categories: CategoryOption[] = React.useMemo(() => {
+    const targetType = mode === 'INCOME' ? 'INCOME' : 'EXPENSE';
+    const filtered = managedCategories
+      .filter((c) => c.type === targetType)
+      .map((c) => ({
+        key: c.iconKey,
+        label: c.label,
+        iconBg: c.iconBg,
+        iconColor: c.iconColor,
+      }));
+    if (filtered.length > 0) return filtered;
+    return mode === 'INCOME' ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  }, [managedCategories, mode]);
 
   const handleModeSwitch = (nextMode: TransactionMode) => {
     setMode(nextMode);
@@ -93,14 +112,14 @@ export function QuickTransactionSheet({
   };
 
   const handleSave = () => {
-    const numericAmount = Number(amount.replace(/[^0-9]/g, ''));
+    const numericAmount = Number(amountText.replace(/[^0-9]/g, ''));
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Nominal tidak valid', 'Masukkan nominal transaksi lebih dari 0.');
+      showToast('Masukkan nominal transaksi lebih dari 0', 'error');
       return;
     }
 
     if (mode === 'TRANSFER' && walletId === targetWalletId) {
-      Alert.alert('Dompet sama', 'Pilih dompet tujuan yang berbeda dari dompet asal.');
+      showToast('Dompet tujuan harus berbeda dari dompet asal', 'error');
       return;
     }
 
@@ -116,220 +135,155 @@ export function QuickTransactionSheet({
       category: selectedCat,
       note: note.trim(),
     });
+    showToast(
+      editingTransaction
+        ? 'Transaksi diperbarui'
+        : `Tercatat (${formatIDR(numericAmount)})`
+    );
     onClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
-      >
-        <Pressable style={styles.dismissArea} onPress={onClose} />
-
-        <View style={styles.sheet}>
-          <View style={styles.dragHandle} />
-
-          <View style={styles.headerRow}>
-            <Text style={styles.sheetTitle}>
-              {editingTransaction ? 'Edit Transaksi' : 'Catat Cepat'}
-            </Text>
+    <BaseBottomSheet
+      visible={visible}
+      title={editingTransaction ? 'Edit Transaksi' : 'Catat Cepat'}
+      onClose={onClose}
+      footer={
+        <Pressable
+          onPress={handleSave}
+          accessibilityRole="button"
+          accessibilityLabel="Simpan Transaksi"
+          style={({ pressed }) => [styles.saveBtn, pressed && styles.saveBtnPressed]}
+        >
+          <Text style={styles.saveBtnText}>Simpan</Text>
+        </Pressable>
+      }
+    >
+      <View style={styles.modeTabs}>
+        {(
+          [
+            { key: 'EXPENSE', label: 'Pengeluaran' },
+            { key: 'INCOME', label: 'Pemasukan' },
+            { key: 'TRANSFER', label: 'Transfer' },
+          ] as { key: TransactionMode; label: string }[]
+        ).map((item) => {
+          const active = mode === item.key;
+          return (
             <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Tutup"
-              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
+              key={item.key}
+              onPress={() => handleModeSwitch(item.key)}
+              style={[styles.modeTab, active && styles.modeTabActive]}
             >
-              <X size={20} color={Colors.textMuted} strokeWidth={1.9} />
+              <Text style={[styles.modeTabText, active && styles.modeTabTextActive]}>
+                {item.label}
+              </Text>
             </Pressable>
-          </View>
+          );
+        })}
+      </View>
 
-          <View style={styles.modeTabs}>
-            {(
-              [
-                { key: 'EXPENSE', label: 'Pengeluaran' },
-                { key: 'INCOME', label: 'Pemasukan' },
-                { key: 'TRANSFER', label: 'Transfer' },
-              ] as { key: TransactionMode; label: string }[]
-            ).map((item) => {
-              const active = mode === item.key;
+      <Text style={styles.label}>Nominal (Rp)</Text>
+      <View style={styles.amountBox}>
+        <Text style={styles.rpPrefix}>Rp</Text>
+        <TextInput
+          style={[styles.amountInput, Typography.tabularNums]}
+          placeholder="0"
+          placeholderTextColor="#94A3B8"
+          keyboardType="numeric"
+          value={amountText}
+          onChangeText={(val) => setAmountText(formatThousands(val))}
+        />
+      </View>
+
+      <Text style={styles.label}>
+        {mode === 'TRANSFER' ? 'Dari Dompet' : 'Pilih Dompet'}
+      </Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={styles.chipRow}>
+          {wallets.map((w) => {
+            const selected = w.id === walletId;
+            return (
+              <Pressable
+                key={w.id}
+                onPress={() => setWalletId(w.id)}
+                style={[styles.chip, selected && styles.chipSelected]}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                  {w.name}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      {mode === 'TRANSFER' ? (
+        <>
+          <Text style={styles.label}>Ke Dompet</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.chipRow}>
+              {wallets.map((w) => {
+                const selected = w.id === targetWalletId;
+                return (
+                  <Pressable
+                    key={w.id}
+                    onPress={() => setTargetWalletId(w.id)}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                  >
+                    <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                      {w.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+        </>
+      ) : (
+        <>
+          <Text style={styles.label}>Kategori</Text>
+          <View style={styles.catWrap}>
+            {categories.map((cat) => {
+              const selected = cat.key === categoryKey;
               return (
                 <Pressable
-                  key={item.key}
-                  onPress={() => handleModeSwitch(item.key)}
-                  style={[styles.modeTab, active && styles.modeTabActive]}
+                  key={cat.key}
+                  onPress={() => setCategoryKey(cat.key)}
+                  style={[styles.chip, selected && styles.chipSelected]}
                 >
-                  <Text style={[styles.modeTabText, active && styles.modeTabTextActive]}>
-                    {item.label}
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    {cat.label}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
+        </>
+      )}
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.formBody}
-          >
-            <Text style={styles.label}>Nominal (Rp)</Text>
-            <View style={styles.amountBox}>
-              <Text style={styles.rpPrefix}>Rp</Text>
-              <TextInput
-                style={[styles.amountInput, Typography.tabularNums]}
-                placeholder="0"
-                placeholderTextColor="#94A3B8"
-                keyboardType="numeric"
-                value={amount}
-                onChangeText={setAmount}
-              />
-            </View>
-
-            <Text style={styles.label}>
-              {mode === 'TRANSFER' ? 'Dari Dompet' : 'Pilih Dompet'}
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={styles.chipRow}>
-                {wallets.map((w) => {
-                  const selected = w.id === walletId;
-                  return (
-                    <Pressable
-                      key={w.id}
-                      onPress={() => setWalletId(w.id)}
-                      style={[styles.chip, selected && styles.chipSelected]}
-                    >
-                      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                        {w.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            {mode === 'TRANSFER' ? (
-              <>
-                <Text style={styles.label}>Ke Dompet</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.chipRow}>
-                    {wallets.map((w) => {
-                      const selected = w.id === targetWalletId;
-                      return (
-                        <Pressable
-                          key={w.id}
-                          onPress={() => setTargetWalletId(w.id)}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                            {w.name}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-              </>
-            ) : (
-              <>
-                <Text style={styles.label}>Kategori</Text>
-                <View style={styles.catWrap}>
-                  {categories.map((cat) => {
-                    const selected = cat.key === categoryKey;
-                    return (
-                      <Pressable
-                        key={cat.key}
-                        onPress={() => setCategoryKey(cat.key)}
-                        style={[styles.chip, selected && styles.chipSelected]}
-                      >
-                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                          {cat.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </>
-            )}
-
-            <Text style={styles.label}>Catatan</Text>
-            <TextInput
-              style={styles.noteInput}
-              placeholder={
-                mode === 'TRANSFER'
-                  ? 'Contoh: Topup saldo GoPay'
-                  : 'Contoh: Makan siang atau bonus proyek'
-              }
-              placeholderTextColor="#94A3B8"
-              value={note}
-              onChangeText={setNote}
-            />
-          </ScrollView>
-
-          <Pressable
-            onPress={handleSave}
-            accessibilityRole="button"
-            accessibilityLabel="Simpan Transaksi"
-            style={({ pressed }) => [styles.saveBtn, pressed && styles.saveBtnPressed]}
-          >
-            <Text style={styles.saveBtnText}>Simpan</Text>
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      <Text style={styles.label}>Catatan</Text>
+      <TextInput
+        style={styles.noteInput}
+        placeholder={
+          mode === 'TRANSFER'
+            ? 'Contoh: Topup saldo GoPay'
+            : 'Contoh: Makan siang atau bonus proyek'
+        }
+        placeholderTextColor="#94A3B8"
+        value={note}
+        onChangeText={setNote}
+      />
+    </BaseBottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: {
-    flex: 1,
-  },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 24,
-    maxHeight: '86%',
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  sheetTitle: {
-    fontFamily: FontFamily.bold,
-    fontSize: 18,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.minSize,
-    height: TouchTarget.minSize,
-    borderRadius: 22,
-    backgroundColor: Colors.canvas,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   modeTabs: {
     flexDirection: 'row',
     backgroundColor: Colors.canvas,
     borderRadius: 14,
     padding: 4,
-    marginBottom: 14,
+    marginBottom: 8,
   },
   modeTab: {
     flex: 1,
@@ -353,9 +307,6 @@ const styles = StyleSheet.create({
   modeTabTextActive: {
     fontFamily: FontFamily.semibold,
     color: Colors.primary,
-  },
-  formBody: {
-    paddingBottom: 12,
   },
   label: {
     fontFamily: FontFamily.semibold,
@@ -433,7 +384,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 12,
   },
   saveBtnPressed: {
     backgroundColor: Colors.primaryDark,

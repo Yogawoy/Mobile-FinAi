@@ -1,16 +1,19 @@
 {
   "expo": {
-    "name": "Smart Finance",
-    "slug": "smart-finance-mobile",
+    "name": "FinAI",
+    "slug": "finai-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "smartfinancemobile",
+    "scheme": "finai",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.finai.mobile"
     },
     "android": {
+      "package": "com.finai.mobile",
+      "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -20,7 +23,6 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "bundler": "metro",
       "output": "server",
       "favicon": "./assets/images/favicon.png"
     },
@@ -29,14 +31,16 @@
       [
         "expo-splash-screen",
         {
+          "backgroundColor": "#208AEF",
           "image": "./assets/images/splash-icon.png",
-          "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "imageWidth": 76
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "reactCompiler": true
     }
   }
 }

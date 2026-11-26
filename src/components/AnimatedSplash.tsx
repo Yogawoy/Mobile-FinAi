@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+﻿import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Wallet } from 'lucide-react-native';
@@ -10,7 +10,7 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
-import { Colors, FontFamily, Motion, Radius } from '@/src/theme/tokens';
+import { Colors, FontFamily, Motion, Radius } from '@/theme/tokens';
 
 interface AnimatedSplashProps {
   onFinish: () => void;

@@ -402,6 +402,7 @@ export const mockBudgets: BudgetItem[] = [
 ];
 
 export type GoalIconKey = 'shield' | 'laptop' | 'graduation' | 'target';
+export type GoalFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
 export interface GoalItem {
   id: string;
@@ -412,6 +413,8 @@ export interface GoalItem {
   deadline: string;
   walletId?: string;
   walletName?: string;
+  frequency?: GoalFrequency;
+  isRealized?: boolean;
 }
 
 export const mockGoals: GoalItem[] = [
@@ -424,6 +427,8 @@ export const mockGoals: GoalItem[] = [
     deadline: 'Des 2026',
     walletId: 'mandiri',
     walletName: 'Tabungan Mandiri',
+    frequency: 'MONTHLY',
+    isRealized: false,
   },
   {
     id: 'goal-2',
@@ -434,6 +439,8 @@ export const mockGoals: GoalItem[] = [
     deadline: 'Jun 2027',
     walletId: 'mandiri',
     walletName: 'Tabungan Mandiri',
+    frequency: 'MONTHLY',
+    isRealized: false,
   },
   {
     id: 'goal-3',
@@ -444,6 +451,8 @@ export const mockGoals: GoalItem[] = [
     deadline: 'Okt 2027',
     walletId: 'bca',
     walletName: 'Bank BCA',
+    frequency: 'WEEKLY',
+    isRealized: false,
   },
 ];
 

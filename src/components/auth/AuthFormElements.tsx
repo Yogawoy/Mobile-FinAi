@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -21,7 +21,7 @@ import {
   FontFamily,
   Motion,
   TouchTarget,
-} from '@/src/theme/tokens';
+} from '@/theme/tokens';
 
 interface AuthInputProps extends TextInputProps {
   icon: React.ReactNode;

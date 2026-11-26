@@ -1,16 +1,12 @@
-import React from 'react';
-import {
-  Alert,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { Pencil, Trash2, X } from 'lucide-react-native';
-import { formatIDR } from '@/src/lib/format';
-import { type TransactionItem } from '@/src/lib/mockData';
-import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/src/theme/tokens';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pencil, Trash2 } from 'lucide-react-native';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/ToastProvider';
+import { formatIDR } from '@/lib/format';
+import { type TransactionItem } from '@/lib/mockData';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface TransactionDetailSheetProps {
   visible: boolean;
@@ -27,6 +23,9 @@ export function TransactionDetailSheet({
   onEdit,
   onDelete,
 }: TransactionDetailSheetProps) {
+  const { showToast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   if (!transaction) return null;
 
   const isIncome = transaction.type === 'INCOME';
@@ -65,76 +64,13 @@ export function TransactionDetailSheet({
     ? `${transaction.dateGroup} • ${transaction.dateLabel}`
     : transaction.dateLabel;
 
-  const handleDeletePress = () => {
-    Alert.alert(
-      'Hapus Transaksi',
-      `Yakin ingin menghapus "${transaction.title}"?`,
-      [
-        { text: 'Batal', style: 'cancel' },
-        {
-          text: 'Hapus',
-          style: 'destructive',
-          onPress: () => {
-            onDelete(transaction);
-            onClose();
-          },
-        },
-      ]
-    );
-  };
-
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={styles.dismissArea} onPress={onClose} />
-
-        <View style={styles.sheet}>
-          <View style={styles.dragHandle} />
-
-          <View style={styles.headerRow}>
-            <Text style={styles.sheetTitle}>Detail Transaksi</Text>
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Tutup detail"
-              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            >
-              <X size={20} color={Colors.textMuted} strokeWidth={1.9} />
-            </Pressable>
-          </View>
-
-          <View style={styles.heroSummary}>
-            <View style={[styles.typeBadge, { backgroundColor: badgeConfig.bg }]}>
-              <Text style={[styles.typeBadgeText, { color: badgeConfig.color }]}>
-                {badgeConfig.label}
-              </Text>
-            </View>
-            <Text
-              style={[
-                styles.heroAmount,
-                Typography.tabularNums,
-                { color: badgeConfig.amountColor },
-              ]}
-            >
-              {badgeConfig.prefix}
-              {formatIDR(transaction.amount)}
-            </Text>
-          </View>
-
-          <View style={styles.detailCard}>
-            <DetailRow label="Dompet" value={walletDisplay} />
-            <View style={styles.rowDivider} />
-            <DetailRow label="Kategori" value={transaction.categoryLabel} />
-            <View style={styles.rowDivider} />
-            <DetailRow label="Tanggal" value={dateDisplay} />
-            <View style={styles.rowDivider} />
-            <DetailRow
-              label="Catatan"
-              value={transaction.note || transaction.title}
-              multiline
-            />
-          </View>
-
+    <>
+      <BaseBottomSheet
+        visible={visible}
+        title="Detail Transaksi"
+        onClose={onClose}
+        footer={
           <View style={styles.actionRow}>
             <Pressable
               onPress={() => {
@@ -153,7 +89,7 @@ export function TransactionDetailSheet({
             </Pressable>
 
             <Pressable
-              onPress={handleDeletePress}
+              onPress={() => setConfirmOpen(true)}
               accessibilityRole="button"
               accessibilityLabel="Hapus transaksi"
               style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.8 }]}
@@ -162,9 +98,57 @@ export function TransactionDetailSheet({
               <Text style={styles.deleteBtnText}>Hapus</Text>
             </Pressable>
           </View>
+        }
+      >
+        <View style={styles.heroSummary}>
+          <View style={[styles.typeBadge, { backgroundColor: badgeConfig.bg }]}>
+            <Text style={[styles.typeBadgeText, { color: badgeConfig.color }]}>
+              {badgeConfig.label}
+            </Text>
+          </View>
+          <Text
+            style={[
+              styles.heroAmount,
+              Typography.tabularNums,
+              { color: badgeConfig.amountColor },
+            ]}
+          >
+            {badgeConfig.prefix}
+            {formatIDR(transaction.amount)}
+          </Text>
         </View>
-      </View>
-    </Modal>
+
+        <View style={styles.detailCard}>
+          <DetailRow label="Dompet" value={walletDisplay} />
+          <View style={styles.rowDivider} />
+          <DetailRow label="Kategori" value={transaction.categoryLabel} />
+          <View style={styles.rowDivider} />
+          <DetailRow label="Tanggal" value={dateDisplay} />
+          <View style={styles.rowDivider} />
+          <DetailRow
+            label="Catatan"
+            value={transaction.note || transaction.title}
+            multiline
+          />
+        </View>
+      </BaseBottomSheet>
+
+      <ConfirmDialog
+        visible={confirmOpen}
+        title="Hapus Transaksi?"
+        message={`Transaksi "${transaction.title}" akan dihapus dari daftar.`}
+        confirmLabel="Hapus"
+        variant="danger"
+        icon="trash"
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          onDelete(transaction);
+          showToast('Transaksi dihapus');
+          onClose();
+        }}
+      />
+    </>
   );
 }
 
@@ -188,51 +172,9 @@ function DetailRow({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: {
-    flex: 1,
-  },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  sheetTitle: {
-    fontFamily: FontFamily.bold,
-    fontSize: 18,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.minSize,
-    height: TouchTarget.minSize,
-    borderRadius: 22,
-    backgroundColor: Colors.canvas,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   heroSummary: {
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 14,
     gap: 10,
   },
   typeBadge: {
@@ -256,7 +198,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingHorizontal: 16,
     paddingVertical: 4,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   detailRow: {
     flexDirection: 'row',

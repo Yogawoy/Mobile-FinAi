@@ -4,7 +4,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { ArrowLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Rect } from 'react-native-svg';
-import { FontFamily, TouchTarget } from '@/src/theme/tokens';
+import { clamp } from '@/lib/responsive';
+import { FontFamily, TouchTarget } from '@/theme/tokens';
 
 interface AuthCurvedHeaderProps {
   title: string;
@@ -41,8 +42,8 @@ export function AuthCurvedHeader({
   const insets = useSafeAreaInsets();
 
   const headerHeight = compact
-    ? Math.max(210, Math.round(height * 0.27))
-    : Math.max(255, Math.round(height * 0.33));
+    ? clamp(Math.round(height * 0.23), 155, 215)
+    : clamp(Math.round(height * 0.28), 185, 250);
 
   return (
     <View style={[styles.container, { height: headerHeight }]}>

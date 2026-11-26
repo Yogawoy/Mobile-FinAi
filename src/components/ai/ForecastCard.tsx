@@ -1,8 +1,8 @@
-import React from 'react';
+﻿import React from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Defs, Line, LinearGradient as SvgGradient, Path, Stop } from 'react-native-svg';
-import { type ForecastData } from '@/src/lib/mockData';
-import { Colors, FontFamily, Radius, Typography } from '@/src/theme/tokens';
+import { type ForecastData } from '@/lib/mockData';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface ForecastCardProps {
   forecast: ForecastData;

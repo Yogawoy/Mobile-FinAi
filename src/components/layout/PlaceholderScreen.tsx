@@ -1,7 +1,7 @@
-import React from 'react';
+﻿import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { MobileHeader } from '@/src/components/layout/MobileHeader';
-import { Colors, FontFamily, Radius, Spacing } from '@/src/theme/tokens';
+import { MobileHeader } from '@/components/layout/MobileHeader';
+import { Colors, FontFamily, Radius, Spacing } from '@/theme/tokens';
 
 interface PlaceholderScreenProps {
   isHome?: boolean;

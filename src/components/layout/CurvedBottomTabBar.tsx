@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { type ComponentRef, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Keyboard,
   Platform,
@@ -20,7 +20,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-import { Colors, FontFamily, Motion } from '@/src/theme/tokens';
+import { useFinance } from '@/context/FinanceContext';
+import { Colors, FontFamily, Motion } from '@/theme/tokens';
 
 const AI_BTN_SIZE = 60;
 const AI_PROTRUDE = 26;
@@ -107,6 +108,7 @@ function SideTabItem({
       <Animated.View style={[styles.sideTabInner, animatedStyle]}>
         {renderIcon()}
         <Text
+          maxFontSizeMultiplier={1.15}
           style={[
             styles.sideLabel,
             {
@@ -151,8 +153,25 @@ export function CurvedBottomTabBar({
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const reducedMotion = useReducedMotion();
+  const { registerAiButtonRect } = useFinance();
+  const aiBtnRef = useRef<ComponentRef<typeof View>>(null);
   const aiScale = useSharedValue(1);
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  const measureAiButton = useCallback(() => {
+    requestAnimationFrame(() => {
+      aiBtnRef.current?.measureInWindow((x, y, w, h) => {
+        if (w > 0 && h > 0) {
+          registerAiButtonRect({ x, y, width: w, height: h });
+        }
+      });
+    });
+  }, [registerAiButtonRect]);
+
+  useEffect(() => {
+    const timer = setTimeout(measureAiButton, 120);
+    return () => clearTimeout(timer);
+  }, [width, insets.bottom, measureAiButton]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -165,7 +184,7 @@ export function CurvedBottomTabBar({
     };
   }, []);
 
-  const bottomInset = Math.max(insets.bottom, 6);
+  const bottomInset = Math.max(insets.bottom, 8);
   const barHeight = 68 + bottomInset;
   const wrapperHeight = barHeight + AI_PROTRUDE + 6;
   const { fillPath, strokePath } = buildNotchPaths(width, barHeight);
@@ -293,14 +312,16 @@ export function CurvedBottomTabBar({
           style={[styles.aiFloatingBtn, { left: width / 2 - AI_BTN_SIZE / 2 }]}
         >
           <Animated.View style={aiAnimatedStyle}>
-            <LinearGradient
-              colors={['#4B89FF', '#3B7AF5', '#2563EB']}
-              start={{ x: 0.1, y: 0 }}
-              end={{ x: 0.9, y: 1 }}
-              style={[styles.aiGradientCircle, aiMeta.isFocused && styles.aiActiveRing]}
-            >
-              <Sparkles size={26} color="#FFFFFF" strokeWidth={2} />
-            </LinearGradient>
+            <View ref={aiBtnRef} collapsable={false} onLayout={measureAiButton}>
+              <LinearGradient
+                colors={['#4B89FF', '#3B7AF5', '#2563EB']}
+                start={{ x: 0.1, y: 0 }}
+                end={{ x: 0.9, y: 1 }}
+                style={[styles.aiGradientCircle, aiMeta.isFocused && styles.aiActiveRing]}
+              >
+                <Sparkles size={26} color="#FFFFFF" strokeWidth={2} />
+              </LinearGradient>
+            </View>
           </Animated.View>
         </Pressable>
       ) : null}

@@ -1,9 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,10 +7,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { X } from 'lucide-react-native';
-import { formatIDR } from '@/src/lib/format';
-import { type GoalIconKey, type GoalItem, type WalletItem } from '@/src/lib/mockData';
-import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/src/theme/tokens';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { useToast } from '@/components/ui/ToastProvider';
+import { formatIDR } from '@/lib/format';
+import { calculateGoalRecommendation, formatCompactIDR } from '@/lib/goalCalculator';
+import {
+  type GoalFrequency,
+  type GoalIconKey,
+  type GoalItem,
+  type WalletItem,
+} from '@/lib/mockData';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 export interface GoalCreatePayload {
   name: string;
@@ -23,6 +26,7 @@ export interface GoalCreatePayload {
   iconKey: GoalIconKey;
   walletId: string;
   walletName: string;
+  frequency: GoalFrequency;
 }
 
 export interface GoalContributePayload {
@@ -48,7 +52,13 @@ const GOAL_ICONS: { key: GoalIconKey; label: string }[] = [
   { key: 'target', label: 'Lainnya' },
 ];
 
-const QUICK_AMOUNTS = [100_000, 250_000, 500_000, 1_000_000];
+const FREQUENCY_OPTIONS: { key: GoalFrequency; label: string }[] = [
+  { key: 'DAILY', label: 'Harian' },
+  { key: 'WEEKLY', label: 'Mingguan' },
+  { key: 'MONTHLY', label: 'Bulanan' },
+];
+
+const QUICK_AMOUNTS = [100_000, 250_000, 500_000];
 
 function formatThousands(raw: string): string {
   const digits = raw.replace(/[^0-9]/g, '');
@@ -64,6 +74,8 @@ export function GoalFormSheet({
   onCreateGoal,
   onContribute,
 }: GoalFormSheetProps) {
+  const { showToast } = useToast();
+
   const defaultStorageWallet =
     wallets.find((w) => w.id === 'mandiri')?.id || wallets[0]?.id || 'bca';
   const defaultSourceWallet =
@@ -73,28 +85,11 @@ export function GoalFormSheet({
   const [targetText, setTargetText] = useState('');
   const [deadline, setDeadline] = useState('Des 2027');
   const [iconKey, setIconKey] = useState<GoalIconKey>('target');
+  const [frequency, setFrequency] = useState<GoalFrequency>('MONTHLY');
   const [storageWalletId, setStorageWalletId] = useState(defaultStorageWallet);
 
   const [contributeText, setContributeText] = useState('');
   const [sourceWalletId, setSourceWalletId] = useState(defaultSourceWallet);
-  const [targetWalletId, setTargetWalletId] = useState(defaultStorageWallet);
-
-  useEffect(() => {
-    if (!visible) return;
-    if (contributingGoal) {
-      setContributeText('250.000');
-      const goalWallet = contributingGoal.walletId || defaultStorageWallet;
-      setTargetWalletId(goalWallet);
-      const otherWallets = wallets.filter((w) => w.id !== goalWallet);
-      setSourceWalletId(otherWallets[0]?.id || defaultSourceWallet);
-      return;
-    }
-    setName('');
-    setTargetText('');
-    setDeadline('Des 2027');
-    setIconKey('target');
-    setStorageWalletId(defaultStorageWallet);
-  }, [visible, contributingGoal, wallets, defaultStorageWallet, defaultSourceWallet]);
 
   const isContributeMode = Boolean(contributingGoal);
   const goalWalletId = contributingGoal?.walletId || defaultStorageWallet;
@@ -102,33 +97,75 @@ export function GoalFormSheet({
     contributingGoal?.walletName ||
     wallets.find((w) => w.id === goalWalletId)?.name ||
     'Dompet Tujuan';
-  const availableSourceWallets = wallets.filter((w) => w.id !== goalWalletId);
-  const sourceWalletList =
-    availableSourceWallets.length > 0 ? availableSourceWallets : wallets;
+
+  const contributeRec = contributingGoal
+    ? calculateGoalRecommendation(
+        contributingGoal.current,
+        contributingGoal.target,
+        contributingGoal.deadline,
+        contributingGoal.frequency
+      )
+    : null;
+
+  const createTargetNum = Number(targetText.replace(/[^0-9]/g, '')) || 0;
+  const createRec = calculateGoalRecommendation(0, createTargetNum, deadline, frequency);
+
+  useEffect(() => {
+    if (!visible) return;
+    if (contributingGoal) {
+      const rec = calculateGoalRecommendation(
+        contributingGoal.current,
+        contributingGoal.target,
+        contributingGoal.deadline,
+        contributingGoal.frequency
+      );
+      setContributeText(
+        rec.amount > 0 ? formatThousands(String(rec.amount)) : '250.000'
+      );
+      const otherWallets = wallets.filter((w) => w.id !== goalWalletId);
+      setSourceWalletId(otherWallets[0]?.id || goalWalletId);
+      return;
+    }
+    setName('');
+    setTargetText('');
+    setDeadline('Des 2027');
+    setIconKey('target');
+    setFrequency('MONTHLY');
+    setStorageWalletId(defaultStorageWallet);
+  }, [visible, contributingGoal, wallets, defaultStorageWallet, goalWalletId]);
+
+  const isSameWalletEarmark = sourceWalletId === goalWalletId;
 
   const handleSave = () => {
     if (isContributeMode && contributingGoal) {
       const amount = Number(contributeText.replace(/[^0-9]/g, ''));
       if (!Number.isFinite(amount) || amount <= 0) {
-        Alert.alert('Nominal tidak valid', 'Masukkan nominal tabungan lebih dari 0.');
+        showToast('Masukkan nominal tabungan lebih dari 0', 'error');
         return;
       }
 
       const sourceWallet = wallets.find((w) => w.id === sourceWalletId);
       if (sourceWallet && sourceWallet.balance < amount) {
-        Alert.alert(
-          'Saldo tidak cukup',
-          `Saldo ${sourceWallet.name} saat ini ${formatIDR(sourceWallet.balance)}.`
+        showToast(
+          `Saldo ${sourceWallet.name} tidak cukup (${formatIDR(sourceWallet.balance)})`,
+          'error'
         );
         return;
       }
 
+      const nextTotal = contributingGoal.current + amount;
       onContribute({
         goalId: contributingGoal.id,
         amount,
         sourceWalletId,
-        targetWalletId,
+        targetWalletId: goalWalletId,
       });
+
+      if (nextTotal >= contributingGoal.target) {
+        showToast(`Selamat! Target "${contributingGoal.name}" Tercapai 100%`);
+      } else {
+        showToast(`Berhasil menabung ${formatIDR(amount)}`);
+      }
       onClose();
       return;
     }
@@ -136,11 +173,11 @@ export function GoalFormSheet({
     const trimmed = name.trim();
     const target = Number(targetText.replace(/[^0-9]/g, ''));
     if (!trimmed) {
-      Alert.alert('Nama target kosong', 'Masukkan nama target tabungan.');
+      showToast('Masukkan nama target tabungan', 'error');
       return;
     }
     if (!Number.isFinite(target) || target <= 0) {
-      Alert.alert('Target tidak valid', 'Masukkan nominal target lebih dari 0.');
+      showToast('Masukkan nominal target lebih dari 0', 'error');
       return;
     }
 
@@ -153,257 +190,232 @@ export function GoalFormSheet({
       iconKey,
       walletId: storageWalletId,
       walletName: chosenWallet?.name || 'Tabungan',
+      frequency,
     });
+    showToast(`Target "${trimmed}" dibuat`);
     onClose();
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.backdrop}
-      >
-        <Pressable style={styles.dismissArea} onPress={onClose} />
-
-        <View style={styles.sheet}>
-          <View style={styles.dragHandle} />
-
-          <View style={styles.headerRow}>
-            <Text style={styles.sheetTitle}>
-              {isContributeMode ? 'Tambah Tabungan' : 'Target Tabungan Baru'}
+    <BaseBottomSheet
+      visible={visible}
+      title={isContributeMode ? 'Tambah Tabungan' : 'Target Tabungan Baru'}
+      onClose={onClose}
+      footer={
+        <Pressable
+          onPress={handleSave}
+          accessibilityRole="button"
+          accessibilityLabel={isContributeMode ? 'Simpan Tabungan' : 'Buat Target'}
+          style={({ pressed }) => [styles.saveBtn, pressed && styles.saveBtnPressed]}
+        >
+          <Text style={styles.saveBtnText}>
+            {isContributeMode ? 'Simpan Tabungan' : 'Simpan Target'}
+          </Text>
+        </Pressable>
+      }
+    >
+      {isContributeMode && contributingGoal ? (
+        <>
+          <View style={styles.goalPreviewBox}>
+            <Text style={styles.goalPreviewName}>{contributingGoal.name}</Text>
+            <Text style={[styles.goalPreviewMeta, Typography.tabularNums]}>
+              Terkumpul {formatIDR(contributingGoal.current)} /{' '}
+              {formatIDR(contributingGoal.target)}
             </Text>
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Tutup"
-              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            >
-              <X size={20} color={Colors.textMuted} strokeWidth={1.9} />
-            </Pressable>
+            <Text style={styles.goalPreviewWallet}>
+              Disimpan permanen di: {goalWalletName}
+            </Text>
           </View>
 
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.formBody}
-          >
-            {isContributeMode && contributingGoal ? (
-              <>
-                <View style={styles.goalPreviewBox}>
-                  <Text style={styles.goalPreviewName}>{contributingGoal.name}</Text>
-                  <Text style={[styles.goalPreviewMeta, Typography.tabularNums]}>
-                    Terkumpul {formatIDR(contributingGoal.current)} /{' '}
-                    {formatIDR(contributingGoal.target)}
-                  </Text>
-                  <Text style={styles.goalPreviewWallet}>
-                    Disimpan permanen di: {goalWalletName}
-                  </Text>
-                </View>
-
-                <Text style={styles.label}>Ambil dari Dompet</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.walletChipRow}>
-                    {sourceWalletList.map((w) => {
-                      const selected = w.id === sourceWalletId;
-                      return (
-                        <Pressable
-                          key={w.id}
-                          onPress={() => setSourceWalletId(w.id)}
-                          style={[styles.walletChip, selected && styles.chipSelected]}
-                        >
-                          <Text
-                            style={[styles.chipText, selected && styles.chipTextSelected]}
-                          >
-                            {w.shortName || w.name}
-                          </Text>
-                          <Text
-                            style={[
-                              styles.walletChipBal,
-                              Typography.tabularNums,
-                              selected && styles.walletChipBalSelected,
-                            ]}
-                          >
-                            {formatIDR(w.balance)}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-
-                <Text style={styles.label}>Nominal Kontribusi (Rp)</Text>
-                <View style={styles.amountBox}>
-                  <Text style={styles.rpPrefix}>Rp</Text>
-                  <TextInput
-                    style={[styles.amountInput, Typography.tabularNums]}
-                    placeholder="0"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="numeric"
-                    value={contributeText}
-                    onChangeText={(val) => setContributeText(formatThousands(val))}
-                  />
-                </View>
-
-                <Text style={styles.label}>Pilih Cepat</Text>
-                <View style={styles.chipWrap}>
-                  {QUICK_AMOUNTS.map((amt) => (
-                    <Pressable
-                      key={amt}
-                      onPress={() => setContributeText(formatThousands(String(amt)))}
-                      style={styles.quickChip}
+          <Text style={styles.label}>Ambil dari Dompet</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.walletChipRow}>
+              {wallets.map((w) => {
+                const selected = w.id === sourceWalletId;
+                const isTarget = w.id === goalWalletId;
+                return (
+                  <Pressable
+                    key={w.id}
+                    onPress={() => setSourceWalletId(w.id)}
+                    style={[styles.walletChip, selected && styles.chipSelected]}
+                  >
+                    <Text
+                      style={[styles.chipText, selected && styles.chipTextSelected]}
                     >
-                      <Text style={[styles.quickChipText, Typography.tabularNums]}>
-                        +{formatIDR(amt)}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </>
-            ) : (
-              <>
-                <Text style={styles.label}>Nama Target</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Contoh: Dana Darurat, Beli Motor"
-                  placeholderTextColor="#94A3B8"
-                  value={name}
-                  onChangeText={setName}
-                />
-
-                <Text style={styles.label}>Simpan di Dompet (Permanen)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.walletChipRow}>
-                    {wallets.map((w) => {
-                      const selected = w.id === storageWalletId;
-                      return (
-                        <Pressable
-                          key={w.id}
-                          onPress={() => setStorageWalletId(w.id)}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                        >
-                          <Text
-                            style={[styles.chipText, selected && styles.chipTextSelected]}
-                          >
-                            {w.shortName || w.name}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </ScrollView>
-
-                <Text style={styles.label}>Kategori Ikon</Text>
-                <View style={styles.chipWrap}>
-                  {GOAL_ICONS.map((opt) => {
-                    const selected = iconKey === opt.key;
-                    return (
-                      <Pressable
-                        key={opt.key}
-                        onPress={() => setIconKey(opt.key)}
-                        style={[styles.chip, selected && styles.chipSelected]}
-                      >
-                        <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                          {opt.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                <Text style={styles.label}>Nominal Target (Rp)</Text>
-                <View style={styles.amountBox}>
-                  <Text style={styles.rpPrefix}>Rp</Text>
-                  <TextInput
-                    style={[styles.amountInput, Typography.tabularNums]}
-                    placeholder="0"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="numeric"
-                    value={targetText}
-                    onChangeText={(val) => setTargetText(formatThousands(val))}
-                  />
-                </View>
-
-                <Text style={styles.label}>Tenggat Waktu</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Contoh: Des 2027"
-                  placeholderTextColor="#94A3B8"
-                  value={deadline}
-                  onChangeText={setDeadline}
-                />
-              </>
-            )}
+                      {w.shortName || w.name}
+                      {isTarget ? ' (Earmark)' : ''}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.walletChipBal,
+                        Typography.tabularNums,
+                        selected && styles.walletChipBalSelected,
+                      ]}
+                    >
+                      {formatIDR(w.balance)}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </ScrollView>
 
-          <Pressable
-            onPress={handleSave}
-            accessibilityRole="button"
-            accessibilityLabel={isContributeMode ? 'Simpan Tabungan' : 'Buat Target'}
-            style={({ pressed }) => [styles.saveBtn, pressed && styles.saveBtnPressed]}
-          >
-            <Text style={styles.saveBtnText}>
-              {isContributeMode ? 'Simpan Tabungan' : 'Simpan Target'}
-            </Text>
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+          <Text style={styles.helperText}>
+            {isSameWalletEarmark
+              ? `Mode Earmark: Dana sudah berada di ${goalWalletName}, saldo dompet tidak berubah.`
+              : `Dana akan ditransfer dari dompet pilihan ke ${goalWalletName}.`}
+          </Text>
+
+          <Text style={styles.label}>Nominal Kontribusi (Rp)</Text>
+          <View style={styles.amountBox}>
+            <Text style={styles.rpPrefix}>Rp</Text>
+            <TextInput
+              style={[styles.amountInput, Typography.tabularNums]}
+              placeholder="0"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              value={contributeText}
+              onChangeText={(val) => setContributeText(formatThousands(val))}
+            />
+          </View>
+
+          <Text style={styles.label}>Pilih Cepat</Text>
+          <View style={styles.chipWrap}>
+            {contributeRec && contributeRec.amount > 0 ? (
+              <Pressable
+                onPress={() =>
+                  setContributeText(formatThousands(String(contributeRec.amount)))
+                }
+                style={[styles.quickChip, styles.quickChipHighlight]}
+              >
+                <Text style={[styles.quickChipText, Typography.tabularNums]}>
+                  Saran {formatCompactIDR(contributeRec.amount)}
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {QUICK_AMOUNTS.map((amt) => (
+              <Pressable
+                key={amt}
+                onPress={() => setContributeText(formatThousands(String(amt)))}
+                style={styles.quickChip}
+              >
+                <Text style={[styles.quickChipText, Typography.tabularNums]}>
+                  +{formatCompactIDR(amt)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </>
+      ) : (
+        <>
+          <Text style={styles.label}>Nama Target</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Contoh: Dana Darurat, Beli Motor"
+            placeholderTextColor="#94A3B8"
+            value={name}
+            onChangeText={setName}
+          />
+
+          <Text style={styles.label}>Simpan di Dompet (Permanen)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={styles.walletChipRow}>
+              {wallets.map((w) => {
+                const selected = w.id === storageWalletId;
+                return (
+                  <Pressable
+                    key={w.id}
+                    onPress={() => setStorageWalletId(w.id)}
+                    style={[styles.chip, selected && styles.chipSelected]}
+                  >
+                    <Text
+                      style={[styles.chipText, selected && styles.chipTextSelected]}
+                    >
+                      {w.shortName || w.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          <Text style={styles.label}>Kategori Ikon</Text>
+          <View style={styles.chipWrap}>
+            {GOAL_ICONS.map((opt) => {
+              const selected = iconKey === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setIconKey(opt.key)}
+                  style={[styles.chip, selected && styles.chipSelected]}
+                >
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Text style={styles.label}>Nominal Target (Rp)</Text>
+          <View style={styles.amountBox}>
+            <Text style={styles.rpPrefix}>Rp</Text>
+            <TextInput
+              style={[styles.amountInput, Typography.tabularNums]}
+              placeholder="0"
+              placeholderTextColor="#94A3B8"
+              keyboardType="numeric"
+              value={targetText}
+              onChangeText={(val) => setTargetText(formatThousands(val))}
+            />
+          </View>
+
+          <Text style={styles.label}>Frekuensi & Tenggat Waktu</Text>
+          <View style={styles.freqRow}>
+            {FREQUENCY_OPTIONS.map((f) => {
+              const selected = frequency === f.key;
+              return (
+                <Pressable
+                  key={f.key}
+                  onPress={() => setFrequency(f.key)}
+                  style={[styles.freqChip, selected && styles.chipSelected]}
+                >
+                  <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                    {f.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <TextInput
+            style={[styles.input, { marginTop: 8 }]}
+            placeholder="Tenggat, contoh: Des 2027"
+            placeholderTextColor="#94A3B8"
+            value={deadline}
+            onChangeText={setDeadline}
+          />
+
+          {createTargetNum > 0 ? (
+            <View style={styles.recBanner}>
+              <Text style={[styles.recBannerText, Typography.tabularNums]}>
+                {createRec.compactLabel} untuk mencapai target tepat waktu
+              </Text>
+            </View>
+          ) : null}
+        </>
+      )}
+    </BaseBottomSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: {
-    flex: 1,
-  },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 24,
-    maxHeight: '88%',
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  sheetTitle: {
-    fontFamily: FontFamily.bold,
-    fontSize: 18,
-    color: Colors.textPrimary,
-  },
-  closeBtn: {
-    width: TouchTarget.minSize,
-    height: TouchTarget.minSize,
-    borderRadius: 22,
-    backgroundColor: Colors.canvas,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  formBody: {
-    paddingBottom: 14,
-  },
   goalPreviewBox: {
     backgroundColor: Colors.primarySoft,
     borderRadius: 16,
     padding: 14,
-    marginTop: 6,
+    marginTop: 4,
   },
   goalPreviewName: {
     fontFamily: FontFamily.bold,
@@ -428,6 +440,12 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 14,
     marginBottom: 8,
+  },
+  helperText: {
+    fontFamily: FontFamily.regular,
+    fontSize: 11.5,
+    color: Colors.textMuted,
+    marginTop: 6,
   },
   input: {
     backgroundColor: Colors.canvas,
@@ -487,6 +505,32 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semibold,
     color: Colors.primaryDark,
   },
+  freqRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  freqChip: {
+    flex: 1,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: Colors.canvas,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recBanner: {
+    marginTop: 10,
+    backgroundColor: Colors.primarySoft,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  recBannerText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+    color: Colors.primaryDark,
+  },
   quickChip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -494,6 +538,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primarySoft,
     borderWidth: 1,
     borderColor: '#BFDBFE',
+  },
+  quickChipHighlight: {
+    backgroundColor: '#DBEAFE',
+    borderColor: Colors.primary,
   },
   quickChipText: {
     fontFamily: FontFamily.semibold,
@@ -528,7 +576,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 10,
   },
   saveBtnPressed: {
     backgroundColor: Colors.primaryDark,

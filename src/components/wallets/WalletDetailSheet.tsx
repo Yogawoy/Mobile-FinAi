@@ -1,22 +1,18 @@
-import React from 'react';
-import {
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
   Archive,
   ArchiveRestore,
   ArrowLeftRight,
   Pencil,
-  X,
 } from 'lucide-react-native';
-import { formatIDR } from '@/src/lib/format';
-import { type TransactionItem, type WalletItem } from '@/src/lib/mockData';
-import { getWalletTheme } from '@/src/lib/walletTheme';
-import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/src/theme/tokens';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/ToastProvider';
+import { formatIDR } from '@/lib/format';
+import { type TransactionItem, type WalletItem } from '@/lib/mockData';
+import { getWalletTheme } from '@/lib/walletTheme';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface WalletDetailSheetProps {
   visible: boolean;
@@ -39,6 +35,9 @@ export function WalletDetailSheet({
   onEdit,
   onToggleArchive,
 }: WalletDetailSheetProps) {
+  const { showToast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
   if (!wallet) return null;
 
   const theme = getWalletTheme(wallet.type, wallet.colorKey);
@@ -52,91 +51,12 @@ export function WalletDetailSheet({
     .slice(0, 3);
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={styles.dismissArea} onPress={onClose} />
-
-        <View style={styles.sheet}>
-          <View style={styles.dragHandle} />
-
-          <View style={styles.headerRow}>
-            <View style={styles.titleRow}>
-              <Text style={styles.sheetTitle} numberOfLines={1}>
-                {wallet.name}
-              </Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel="Tutup detail dompet"
-              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            >
-              <X size={20} color={Colors.textMuted} strokeWidth={1.9} />
-            </Pressable>
-          </View>
-
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryTop}>
-              <View>
-                <Text style={styles.summaryCaption}>Saldo Dompet</Text>
-                <Text style={[styles.summaryBalance, Typography.tabularNums]}>
-                  {formatIDR(wallet.balance)}
-                </Text>
-              </View>
-              <View style={styles.portionPill}>
-                <Text style={[styles.portionText, Typography.tabularNums]}>
-                  {wallet.isArchived ? 'Diarsipkan' : `${sharePct}% dari total`}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.metaText}>
-              {theme.subLabel} · {wallet.last4}
-            </Text>
-          </View>
-
-          <Text style={styles.sectionLabel}>3 Transaksi Terakhir</Text>
-          <View style={styles.txCard}>
-            {recentTx.length === 0 ? (
-              <Text style={styles.emptyTxText}>
-                Belum ada transaksi tercatat pada dompet ini.
-              </Text>
-            ) : (
-              recentTx.map((tx, idx) => {
-                const isIncome =
-                  tx.type === 'INCOME' ||
-                  (tx.type === 'TRANSFER' && tx.targetWalletId === wallet.id);
-                const amountColor = isIncome ? Colors.income : Colors.expense;
-                const prefix = isIncome ? '+' : '-';
-
-                return (
-                  <View
-                    key={tx.id}
-                    style={[styles.txRow, idx > 0 && styles.txDivider]}
-                  >
-                    <View style={styles.txInfo}>
-                      <Text style={styles.txTitle} numberOfLines={1}>
-                        {tx.title}
-                      </Text>
-                      <Text style={styles.txMeta} numberOfLines={1}>
-                        {tx.categoryLabel} · {tx.dateGroup || tx.dateLabel}
-                      </Text>
-                    </View>
-                    <Text
-                      style={[
-                        styles.txAmount,
-                        Typography.tabularNums,
-                        { color: amountColor },
-                      ]}
-                    >
-                      {prefix}
-                      {formatIDR(tx.amount)}
-                    </Text>
-                  </View>
-                );
-              })
-            )}
-          </View>
-
+    <>
+      <BaseBottomSheet
+        visible={visible}
+        title={wallet.name}
+        onClose={onClose}
+        footer={
           <View style={styles.actionRow}>
             <Pressable
               onPress={() => {
@@ -164,10 +84,7 @@ export function WalletDetailSheet({
             </Pressable>
 
             <Pressable
-              onPress={() => {
-                onToggleArchive(wallet);
-                onClose();
-              }}
+              onPress={() => setConfirmOpen(true)}
               style={({ pressed }) => [
                 styles.actionBtnArchive,
                 pressed && { opacity: 0.8 },
@@ -188,62 +105,104 @@ export function WalletDetailSheet({
               </Text>
             </Pressable>
           </View>
+        }
+      >
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryTop}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.summaryCaption}>Saldo Dompet</Text>
+              <Text
+                style={[styles.summaryBalance, Typography.tabularNums]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {formatIDR(wallet.balance)}
+              </Text>
+            </View>
+            <View style={styles.portionPill}>
+              <Text style={[styles.portionText, Typography.tabularNums]}>
+                {wallet.isArchived ? 'Diarsipkan' : `${sharePct}% dari total`}
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.metaText}>
+            {theme.subLabel} · {wallet.last4}
+          </Text>
         </View>
-      </View>
-    </Modal>
+
+        <Text style={styles.sectionLabel}>3 Transaksi Terakhir</Text>
+        <View style={styles.txCard}>
+          {recentTx.length === 0 ? (
+            <Text style={styles.emptyTxText}>
+              Belum ada transaksi tercatat pada dompet ini.
+            </Text>
+          ) : (
+            recentTx.map((tx, idx) => {
+              const isIncome =
+                tx.type === 'INCOME' ||
+                (tx.type === 'TRANSFER' && tx.targetWalletId === wallet.id);
+              const amountColor = isIncome ? Colors.income : Colors.expense;
+              const prefix = isIncome ? '+' : '-';
+
+              return (
+                <View
+                  key={tx.id}
+                  style={[styles.txRow, idx > 0 && styles.txDivider]}
+                >
+                  <View style={styles.txInfo}>
+                    <Text style={styles.txTitle} numberOfLines={1}>
+                      {tx.title}
+                    </Text>
+                    <Text style={styles.txMeta} numberOfLines={1}>
+                      {tx.categoryLabel} · {tx.dateGroup || tx.dateLabel}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.txAmount,
+                      Typography.tabularNums,
+                      { color: amountColor },
+                    ]}
+                  >
+                    {prefix}
+                    {formatIDR(tx.amount)}
+                  </Text>
+                </View>
+              );
+            })
+          )}
+        </View>
+      </BaseBottomSheet>
+
+      <ConfirmDialog
+        visible={confirmOpen}
+        title={wallet.isArchived ? 'Aktifkan Dompet?' : 'Arsipkan Dompet?'}
+        message={
+          wallet.isArchived
+            ? `Dompet "${wallet.name}" akan kembali ditampilkan di daftar aktif.`
+            : `Dompet "${wallet.name}" akan dipindahkan ke tab Arsip.`
+        }
+        confirmLabel={wallet.isArchived ? 'Aktifkan' : 'Arsipkan'}
+        variant={wallet.isArchived ? 'primary' : 'warning'}
+        icon="archive"
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false);
+          onToggleArchive(wallet);
+          showToast(
+            wallet.isArchived
+              ? `"${wallet.name}" diaktifkan kembali`
+              : `"${wallet.name}" diarsipkan`
+          );
+          onClose();
+        }}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: {
-    flex: 1,
-  },
-  sheet: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 28,
-  },
-  dragHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#CBD5E1',
-    alignSelf: 'center',
-    marginBottom: 12,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  sheetTitle: {
-    fontFamily: FontFamily.bold,
-    fontSize: 18,
-    color: Colors.textPrimary,
-    flex: 1,
-  },
-  closeBtn: {
-    width: TouchTarget.minSize,
-    height: TouchTarget.minSize,
-    borderRadius: 22,
-    backgroundColor: Colors.canvas,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   summaryCard: {
     backgroundColor: Colors.canvas,
     borderRadius: 18,
@@ -271,6 +230,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   portionPill: {
+    flexShrink: 0,
     backgroundColor: Colors.primarySoft,
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -300,7 +260,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     paddingHorizontal: 14,
     paddingVertical: 4,
-    marginBottom: 18,
+    marginBottom: 8,
   },
   emptyTxText: {
     fontFamily: FontFamily.regular,
@@ -322,6 +282,7 @@ const styles = StyleSheet.create({
   },
   txInfo: {
     flex: 1,
+    minWidth: 0,
   },
   txTitle: {
     fontFamily: FontFamily.semibold,
@@ -335,6 +296,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   txAmount: {
+    flexShrink: 0,
     fontFamily: FontFamily.bold,
     fontSize: 13,
   },
