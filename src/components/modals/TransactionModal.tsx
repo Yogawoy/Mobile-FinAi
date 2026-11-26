@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useToast } from '@/components/ui/ToastProvider';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from '@/constants/categories';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -41,7 +41,9 @@ export function TransactionModal({
   const [category, setCategory] = useState('food');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
+  const { showToast } = useToast();
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -71,17 +73,18 @@ export function TransactionModal({
   };
 
   const handleSubmit = async () => {
+    setFormError(null);
     const numericAmount = Number(amount.replace(/[^0-9]/g, ''));
     if (!walletId) {
-      Alert.alert('Dompet wajib dipilih', 'Buat atau pilih dompet terlebih dahulu.');
+      setFormError('Buat atau pilih dompet terlebih dahulu.');
       return;
     }
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Nominal tidak valid', 'Masukkan nominal lebih dari 0.');
+      setFormError('Masukkan nominal lebih dari 0.');
       return;
     }
     if (!description.trim()) {
-      Alert.alert('Deskripsi kosong', 'Isi keterangan transaksi.');
+      setFormError('Isi keterangan transaksi.');
       return;
     }
 
@@ -105,10 +108,11 @@ export function TransactionModal({
           transactionDate: new Date().toISOString(),
         });
       }
+      showToast(isEditing ? 'Transaksi diperbarui' : 'Transaksi dicatat');
       onSaved();
       onClose();
     } catch (err) {
-      Alert.alert('Gagal menyimpan', extractErrorMessage(err));
+      setFormError(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -212,6 +216,12 @@ export function TransactionModal({
             </View>
           </ScrollView>
 
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.submitBtn, submitting && styles.submitDisabled]}
             onPress={handleSubmit}
@@ -232,6 +242,20 @@ export function TransactionModal({
 }
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  errorBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(36, 38, 54, 0.45)',

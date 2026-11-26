@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useToast } from '@/components/ui/ToastProvider';
 import { GOAL_CATEGORIES } from '@/constants/categories';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -25,11 +25,13 @@ interface CreateGoalModalProps {
 }
 
 export function CreateGoalModal({ visible, onClose, onSaved }: CreateGoalModalProps) {
+  const { showToast } = useToast();
   const [name, setName] = useState('');
   const [category, setCategory] = useState('emergency');
   const [targetAmount, setTargetAmount] = useState('');
   const [monthsAhead, setMonthsAhead] = useState('12');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -37,17 +39,19 @@ export function CreateGoalModal({ visible, onClose, onSaved }: CreateGoalModalPr
     setCategory('emergency');
     setTargetAmount('');
     setMonthsAhead('12');
+    setFormError(null);
   }, [visible]);
 
   const handleSubmit = async () => {
+    setFormError(null);
     const amountNum = Number(targetAmount.replace(/[^0-9]/g, ''));
     const monthsNum = Math.max(1, Number(monthsAhead.replace(/[^0-9]/g, '')) || 12);
     if (name.trim().length < 2) {
-      Alert.alert('Nama target terlalu pendek', 'Minimal 2 karakter.');
+      setFormError('Nama target minimal 2 karakter.');
       return;
     }
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
-      Alert.alert('Target nominal tidak valid', 'Masukkan angka lebih dari 0.');
+      setFormError('Target nominal harus lebih dari 0.');
       return;
     }
 
@@ -63,10 +67,11 @@ export function CreateGoalModal({ visible, onClose, onSaved }: CreateGoalModalPr
         deadline: deadlineDate.toISOString(),
         frequency: 'MONTHLY',
       });
+      showToast('Target tabungan dibuat');
       onSaved();
       onClose();
     } catch (err) {
-      Alert.alert('Gagal membuat target', extractErrorMessage(err));
+      setFormError(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -132,6 +137,12 @@ export function CreateGoalModal({ visible, onClose, onSaved }: CreateGoalModalPr
             </View>
           </ScrollView>
 
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
@@ -174,15 +185,16 @@ export function ContributionModal({
     setAmount('');
   }, [visible, goal, wallets]);
 
+  const { showToast } = useToast();
   const handleSubmit = async () => {
     if (!goal) return;
     const numericAmount = Number(amount.replace(/[^0-9]/g, ''));
     if (!walletId) {
-      Alert.alert('Dompet sumber wajib dipilih');
+      showToast('Dompet sumber wajib dipilih');
       return;
     }
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Nominal tidak valid', 'Masukkan nominal setoran lebih dari 0.');
+      showToast('Masukkan nominal setoran lebih dari 0');
       return;
     }
 
@@ -193,10 +205,11 @@ export function ContributionModal({
         amount: numericAmount,
         contributionDate: new Date().toISOString(),
       });
+      showToast('Setoran tabungan dicatat');
       onSaved();
       onClose();
     } catch (err) {
-      Alert.alert('Setoran gagal', extractErrorMessage(err));
+      showToast(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -267,6 +280,20 @@ export function ContributionModal({
 }
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  errorBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(36, 38, 54, 0.45)',

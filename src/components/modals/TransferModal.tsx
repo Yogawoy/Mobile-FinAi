@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useToast } from '@/components/ui/ToastProvider';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { extractErrorMessage } from '@/lib/api-client';
 import { formatIDR } from '@/lib/format';
@@ -25,11 +25,13 @@ interface TransferModalProps {
 }
 
 export function TransferModal({ visible, wallets, onClose, onSuccess }: TransferModalProps) {
+  const { showToast } = useToast();
   const [fromWalletId, setFromWalletId] = useState('');
   const [toWalletId, setToWalletId] = useState('');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -37,20 +39,22 @@ export function TransferModal({ visible, wallets, onClose, onSuccess }: Transfer
     setToWalletId(wallets[1]?.id || wallets[0]?.id || '');
     setAmount('');
     setNote('');
+    setFormError(null);
   }, [visible, wallets]);
 
   const handleSubmit = async () => {
+    setFormError(null);
     const numericAmount = Number(amount.replace(/[^0-9]/g, ''));
     if (!fromWalletId || !toWalletId) {
-      Alert.alert('Pilih dompet', 'Dompet asal dan tujuan wajib dipilih.');
+      setFormError('Dompet asal dan tujuan wajib dipilih.');
       return;
     }
     if (fromWalletId === toWalletId) {
-      Alert.alert('Dompet sama', 'Dompet asal dan tujuan tidak boleh sama.');
+      setFormError('Dompet asal dan tujuan tidak boleh sama.');
       return;
     }
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Nominal tidak valid', 'Masukkan nominal transfer lebih dari 0.');
+      setFormError('Masukkan nominal transfer lebih dari 0.');
       return;
     }
 
@@ -63,10 +67,11 @@ export function TransferModal({ visible, wallets, onClose, onSuccess }: Transfer
         date: new Date().toISOString(),
         note: note.trim() || undefined,
       });
+      showToast('Transfer berhasil dicatat');
       onSuccess();
       onClose();
     } catch (err) {
-      Alert.alert('Transfer gagal', extractErrorMessage(err));
+      setFormError(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -140,6 +145,12 @@ export function TransferModal({ visible, wallets, onClose, onSuccess }: Transfer
             />
           </ScrollView>
 
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
@@ -158,6 +169,20 @@ export function TransferModal({ visible, wallets, onClose, onSuccess }: Transfer
 }
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  errorBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(36, 38, 54, 0.45)',

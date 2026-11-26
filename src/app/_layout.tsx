@@ -58,8 +58,19 @@ export default function RootLayout() {
           >
             <Stack.Screen name="index" />
             <Stack.Screen name="onboarding" />
-            <Stack.Screen name="login" />
-            <Stack.Screen name="register" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen
+              name="login"
+              options={{ animation: 'fade', animationDuration: 260 }}
+            />
+            <Stack.Screen
+              name="register"
+              options={{
+                animation: 'slide_from_right',
+                animationDuration: 300,
+                gestureEnabled: true,
+                fullScreenGestureEnabled: true,
+              }}
+            />
             <Stack.Screen
               name="setup"
               options={{ animation: 'slide_from_right', gestureEnabled: false }}

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,6 +30,7 @@ import {
   type QuickTransactionSubmitPayload,
 } from '@/components/transactions/QuickTransactionSheet';
 import { TransactionDetailSheet } from '@/components/transactions/TransactionDetailSheet';
+import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
 import {
@@ -82,6 +84,16 @@ export default function TransactionsTabScreen() {
   const [quickSheetVisible, setQuickSheetVisible] = useState(false);
   const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
   const [selectedTx, setSelectedTx] = useState<TransactionItem | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const { showToast } = useToast();
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    setTimeout(() => {
+      setRefreshing(false);
+      showToast('Daftar transaksi diperbarui');
+    }, 450);
+  };
 
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -218,6 +230,14 @@ export default function TransactionsTabScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={Colors.primary}
+            colors={[Colors.primary]}
+          />
+        }
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: 112 + insets.bottom },

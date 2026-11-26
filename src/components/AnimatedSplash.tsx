@@ -1,7 +1,6 @@
-﻿import React, { useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Wallet } from 'lucide-react-native';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -10,6 +9,7 @@ import Animated, {
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
+import { FinAiLogoMark } from '@/components/brand/FinAiLogo';
 import { Colors, FontFamily, Motion, Radius } from '@/theme/tokens';
 
 interface AnimatedSplashProps {
@@ -93,11 +93,11 @@ export function AnimatedSplash({ onFinish }: AnimatedSplashProps) {
       >
         <View style={styles.center}>
           <Animated.View style={[styles.logoEmblem, logoStyle]}>
-            <Wallet size={36} color={Colors.primary} strokeWidth={1.75} />
+            <FinAiLogoMark size={48} />
           </Animated.View>
 
           <Animated.View style={[styles.textBlock, textStyle]}>
-            <Text style={styles.brandTitle}>Smart Finance</Text>
+            <Text style={styles.brandTitle}>FinAI</Text>
             <Text style={styles.brandSubtitle}>Keuangan Pribadi Berbasis AI</Text>
           </Animated.View>
         </View>

@@ -1,5 +1,6 @@
 import React, { type ComponentRef, useCallback, useEffect, useRef, useState } from 'react';
 import {
+  type LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -38,6 +39,8 @@ interface CoachMarkOverlayProps {
   onSkip: () => void;
 }
 
+const MORPH_EASING = Easing.bezier(0.22, 1, 0.36, 1);
+
 export function CoachMarkOverlay({
   visible,
   stepIndex,
@@ -55,7 +58,20 @@ export function CoachMarkOverlay({
   const overlayRef = useRef<ComponentRef<typeof View>>(null);
   const [overlayOrigin, setOverlayOrigin] = useState({ x: 0, y: 0 });
   const [overlayHeight, setOverlayHeight] = useState(screenHeight);
+  const [tooltipHeight, setTooltipHeight] = useState(182);
+  const [hasInitializedSpot, setHasInitializedSpot] = useState(false);
 
+  const isClosingRef = useRef(false);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // SharedValues for 60fps spotlight morphing & tooltip glide
+  const animX = useSharedValue(0);
+  const animY = useSharedValue(0);
+  const animW = useSharedValue(0);
+  const animH = useSharedValue(0);
+  const animR = useSharedValue(16);
+  const tooltipTop = useSharedValue(Math.max(insets.top + 60, screenHeight * 0.34));
+  const backdropOpacity = useSharedValue(0);
   const pulseOpacity = useSharedValue(0.9);
 
   const measureOverlayOrigin = useCallback(() => {
@@ -68,9 +84,26 @@ export function CoachMarkOverlay({
   }, []);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      setHasInitializedSpot(false);
+      isClosingRef.current = false;
+      backdropOpacity.value = 0;
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      return;
+    }
     measureOverlayOrigin();
-  }, [visible, stepIndex, targetRect, measureOverlayOrigin]);
+  }, [visible, stepIndex, targetRect, measureOverlayOrigin, backdropOpacity]);
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!visible || reducedMotion) return;
@@ -83,12 +116,6 @@ export function CoachMarkOverlay({
       false
     );
   }, [visible, reducedMotion, pulseOpacity]);
-
-  const haloStyle = useAnimatedStyle(() => ({
-    opacity: pulseOpacity.value,
-  }));
-
-  if (!visible || !step) return null;
 
   const containerH = overlayHeight > 0 ? overlayHeight : screenHeight;
 
@@ -115,95 +142,191 @@ export function CoachMarkOverlay({
     }
   }
 
+  useEffect(() => {
+    if (!visible) return;
+
+    if (!spot) {
+      if (!hasInitializedSpot) {
+        backdropOpacity.value = withTiming(1, {
+          duration: reducedMotion ? 0 : 280,
+          easing: Easing.out(Easing.cubic),
+        });
+      }
+      return;
+    }
+
+    const placeBelow = spot.y + spot.height + 210 < containerH;
+    const targetTooltipTop = placeBelow
+      ? spot.y + spot.height + 14
+      : Math.max(insets.top + 14, spot.y - tooltipHeight - 14);
+
+    if (!hasInitializedSpot) {
+      // Snap directly to Step 1 coordinates so it never jumps from (0,0)
+      animX.value = spot.x;
+      animY.value = spot.y;
+      animW.value = spot.width;
+      animH.value = spot.height;
+      animR.value = spot.borderRadius;
+      tooltipTop.value = targetTooltipTop;
+      setHasInitializedSpot(true);
+      backdropOpacity.value = withTiming(1, {
+        duration: reducedMotion ? 0 : 280,
+        easing: Easing.out(Easing.cubic),
+      });
+      return;
+    }
+
+    const morphDuration = reducedMotion ? 0 : 280;
+    const tooltipDuration = reducedMotion ? 0 : 260;
+
+    animX.value = withTiming(spot.x, { duration: morphDuration, easing: MORPH_EASING });
+    animY.value = withTiming(spot.y, { duration: morphDuration, easing: MORPH_EASING });
+    animW.value = withTiming(spot.width, { duration: morphDuration, easing: MORPH_EASING });
+    animH.value = withTiming(spot.height, { duration: morphDuration, easing: MORPH_EASING });
+    animR.value = withTiming(spot.borderRadius, { duration: morphDuration, easing: MORPH_EASING });
+    tooltipTop.value = withTiming(targetTooltipTop, {
+      duration: tooltipDuration,
+      easing: MORPH_EASING,
+    });
+  }, [
+    visible,
+    spot?.x,
+    spot?.y,
+    spot?.width,
+    spot?.height,
+    spot?.borderRadius,
+    containerH,
+    tooltipHeight,
+    insets.top,
+    hasInitializedSpot,
+    reducedMotion,
+    animX,
+    animY,
+    animW,
+    animH,
+    animR,
+    tooltipTop,
+    backdropOpacity,
+  ]);
+
+  const rootOpacityStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
+  }));
+
+  const topPanelStyle = useAnimatedStyle(() => ({
+    height: Math.max(0, animY.value),
+  }));
+
+  const bottomPanelStyle = useAnimatedStyle(() => ({
+    top: animY.value + animH.value,
+  }));
+
+  const leftPanelStyle = useAnimatedStyle(() => ({
+    top: animY.value,
+    height: animH.value,
+    width: Math.max(0, animX.value),
+  }));
+
+  const rightPanelStyle = useAnimatedStyle(() => ({
+    top: animY.value,
+    height: animH.value,
+    left: animX.value + animW.value,
+  }));
+
+  const frameStyle = useAnimatedStyle(() => ({
+    top: animY.value,
+    left: animX.value,
+    width: animW.value,
+    height: animH.value,
+    borderRadius: animR.value,
+    opacity: pulseOpacity.value,
+  }));
+
+  const tooltipPosStyle = useAnimatedStyle(() => ({
+    top: tooltipTop.value,
+  }));
+
+  const triggerFadeOutAndClose = (cb: () => void) => {
+    if (isClosingRef.current) return;
+    isClosingRef.current = true;
+    const duration = reducedMotion ? 0 : 220;
+    backdropOpacity.value = withTiming(0, {
+      duration,
+      easing: Easing.in(Easing.cubic),
+    });
+    closeTimerRef.current = setTimeout(() => {
+      cb();
+    }, duration);
+  };
+
+  const handleTooltipLayout = (e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0 && Math.abs(h - tooltipHeight) > 2) {
+      setTooltipHeight(h);
+    }
+  };
+
+  if (!visible || !step) return null;
+
   const horizontalMargin = screenWidth < 375 ? 14 : 16;
   const isLastStep = stepIndex >= totalSteps - 1;
-
-  const tooltipPositionStyle = spot
-    ? spot.y + spot.height + 210 < containerH
-      ? { top: spot.y + spot.height + 14 }
-      : { bottom: Math.max(insets.bottom + 14, containerH - spot.y + 14) }
-    : { top: Math.max(insets.top + 60, containerH * 0.34) };
+  const showSpotlight = hasInitializedSpot || Boolean(spot);
 
   return (
-    <View
+    <Animated.View
       ref={overlayRef}
       collapsable={false}
       onLayout={measureOverlayOrigin}
-      style={[StyleSheet.absoluteFill, styles.root]}
+      style={[StyleSheet.absoluteFill, styles.root, rootOpacityStyle]}
     >
-      {spot ? (
+      {showSpotlight ? (
         <>
-          {/* 4-View Dark Backdrop around spotlight cutout */}
-          <View
+          {/* 4-View Animated Dark Backdrop around spotlight cutout */}
+          <Animated.View
             pointerEvents="auto"
             style={[
               styles.backdropPanel,
-              { top: 0, left: 0, right: 0, height: Math.max(0, spot.y) },
+              { top: 0, left: 0, right: 0 },
+              topPanelStyle,
             ]}
           />
-          <View
+          <Animated.View
             pointerEvents="auto"
             style={[
               styles.backdropPanel,
-              { top: spot.y + spot.height, left: 0, right: 0, bottom: 0 },
+              { left: 0, right: 0, bottom: 0 },
+              bottomPanelStyle,
             ]}
           />
-          <View
+          <Animated.View
             pointerEvents="auto"
-            style={[
-              styles.backdropPanel,
-              {
-                top: spot.y,
-                left: 0,
-                width: Math.max(0, spot.x),
-                height: spot.height,
-              },
-            ]}
+            style={[styles.backdropPanel, { left: 0 }, leftPanelStyle]}
           />
-          <View
+          <Animated.View
             pointerEvents="auto"
-            style={[
-              styles.backdropPanel,
-              {
-                top: spot.y,
-                left: spot.x + spot.width,
-                right: 0,
-                height: spot.height,
-              },
-            ]}
+            style={[styles.backdropPanel, { right: 0 }, rightPanelStyle]}
           />
 
-          {/* Subtle Blue Spotlight Frame */}
+          {/* Morphing Blue Spotlight Frame */}
           <Animated.View
             pointerEvents="none"
-            style={[
-              styles.spotlightFrame,
-              {
-                top: spot.y,
-                left: spot.x,
-                width: spot.width,
-                height: spot.height,
-                borderRadius: spot.borderRadius,
-              },
-              haloStyle,
-            ]}
+            style={[styles.spotlightFrame, frameStyle]}
           />
         </>
       ) : (
         <View style={[StyleSheet.absoluteFill, styles.backdropPanel]} />
       )}
 
-      {/* Floating Tooltip Card */}
+      {/* Gliding Floating Tooltip Card */}
       <Animated.View
-        key={step.key}
-        entering={FadeIn.duration(200).easing(Easing.out(Easing.cubic))}
+        onLayout={handleTooltipLayout}
         style={[
           styles.tooltipCard,
           {
             left: horizontalMargin,
             right: horizontalMargin,
           },
-          tooltipPositionStyle,
+          tooltipPosStyle,
         ]}
       >
         <View style={styles.tooltipHeader}>
@@ -214,7 +337,7 @@ export function CoachMarkOverlay({
           </View>
 
           <Pressable
-            onPress={onSkip}
+            onPress={() => triggerFadeOutAndClose(onSkip)}
             hitSlop={10}
             accessibilityRole="button"
             accessibilityLabel="Lewati panduan"
@@ -227,8 +350,10 @@ export function CoachMarkOverlay({
           </Pressable>
         </View>
 
-        <Text style={styles.title}>{step.title}</Text>
-        <Text style={styles.description}>{step.description}</Text>
+        <Animated.View key={step.key} entering={FadeIn.duration(220)}>
+          <Text style={styles.title}>{step.title}</Text>
+          <Text style={styles.description}>{step.description}</Text>
+        </Animated.View>
 
         <View style={styles.footerRow}>
           <View style={styles.dotsRow}>
@@ -259,16 +384,22 @@ export function CoachMarkOverlay({
             ) : null}
 
             <Pressable
-              onPress={onNext}
+              onPress={() => {
+                if (isLastStep) {
+                  triggerFadeOutAndClose(onNext);
+                } else {
+                  onNext();
+                }
+              }}
               accessibilityRole="button"
-              accessibilityLabel={isLastStep ? 'Mulai!' : 'Lanjut'}
+              accessibilityLabel={isLastStep ? 'Mengerti, Mulai!' : 'Lanjut'}
               style={({ pressed }) => [
                 styles.nextBtn,
                 pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
               ]}
             >
               <Text style={styles.nextBtnText}>
-                {isLastStep ? 'Mulai!' : 'Lanjut'}
+                {isLastStep ? 'Mengerti, Mulai!' : 'Lanjut'}
               </Text>
               {!isLastStep ? (
                 <ArrowRight size={15} color="#FFFFFF" strokeWidth={2.3} />
@@ -277,7 +408,7 @@ export function CoachMarkOverlay({
           </View>
         </View>
       </Animated.View>
-    </View>
+    </Animated.View>
   );
 }
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useToast } from '@/components/ui/ToastProvider';
 import { BUDGET_CATEGORIES } from '@/constants/categories';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -35,13 +35,16 @@ export function BudgetModal({
   onClose,
   onSaved,
 }: BudgetModalProps) {
+  const { showToast } = useToast();
   const isEditing = Boolean(initialBudget);
   const [category, setCategory] = useState('food');
   const [limitAmount, setLimitAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
+    setFormError(null);
     if (initialBudget) {
       setCategory(initialBudget.category);
       setLimitAmount(String(Math.round(parseDecimal(initialBudget.limitAmount))));
@@ -52,9 +55,10 @@ export function BudgetModal({
   }, [visible, initialBudget]);
 
   const handleSubmit = async () => {
+    setFormError(null);
     const numericLimit = Number(limitAmount.replace(/[^0-9]/g, ''));
     if (!Number.isFinite(numericLimit) || numericLimit <= 0) {
-      Alert.alert('Batas anggaran tidak valid', 'Masukkan nominal lebih dari 0.');
+      setFormError('Masukkan nominal batas anggaran lebih dari 0.');
       return;
     }
 
@@ -73,10 +77,11 @@ export function BudgetModal({
           year,
         });
       }
+      showToast(isEditing ? 'Anggaran diperbarui' : 'Pos anggaran dibuat');
       onSaved();
       onClose();
     } catch (err) {
-      Alert.alert('Gagal menyimpan anggaran', extractErrorMessage(err));
+      setFormError(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -134,6 +139,12 @@ export function BudgetModal({
             </View>
           </ScrollView>
 
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
@@ -152,6 +163,20 @@ export function BudgetModal({
 }
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  errorBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(36, 38, 54, 0.45)',

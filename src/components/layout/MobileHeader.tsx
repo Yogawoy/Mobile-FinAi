@@ -1,7 +1,8 @@
-﻿import React from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Bell } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useToast } from '@/components/ui/ToastProvider';
 import { Colors, FontFamily, Radius, Spacing, TouchTarget } from '@/theme/tokens';
 
 interface MobileHeaderProps {
@@ -11,13 +12,14 @@ interface MobileHeaderProps {
 
 export function MobileHeader({ isHome = false, title = 'Beranda' }: MobileHeaderProps) {
   const insets = useSafeAreaInsets();
+  const { showToast } = useToast();
 
   const handleNotificationPress = () => {
-    Alert.alert('Notifikasi', 'Semua aktivitas keuangan Anda terpantau aman.');
+    showToast('Semua aktivitas keuangan Anda terpantau aman');
   };
 
   const handleProfilePress = () => {
-    Alert.alert('Profil Pengguna', 'Yoga Saputra · Smart Finance');
+    showToast('Yoga Saputra · FinAI');
   };
 
   return (

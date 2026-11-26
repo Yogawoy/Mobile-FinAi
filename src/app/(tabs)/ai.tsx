@@ -1,29 +1,3 @@
-import React, { type ComponentRef, useEffect, useRef, useState } from 'react';
-import {
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { StatusBar } from 'expo-status-bar';
-import { RotateCcw, Send, Sparkles } from 'lucide-react-native';
-import Animated, {
-  Easing,
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChatRichCard } from '@/components/ai/ChatRichCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -36,6 +10,32 @@ import {
   type ChatMessage,
 } from '@/lib/mockAiChat';
 import { Colors, FontFamily, Radius, TouchTarget } from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import { RotateCcw, Send, Sparkles } from 'lucide-react-native';
+import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import {
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import Animated, {
+  Easing,
+  FadeInUp,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function BouncingDot({ delay }: { delay: number }) {
   const translateY = useSharedValue(0);
@@ -67,7 +67,7 @@ function AiSenderHeader({ timestamp }: { timestamp?: string }) {
       <View style={styles.aiMiniBadge}>
         <Sparkles size={13} color={Colors.primary} strokeWidth={2.1} />
       </View>
-      <Text style={styles.aiSenderName}>Smart Finance AI</Text>
+      <Text style={styles.aiSenderName}>FinAI Assistant</Text>
       {timestamp ? <Text style={styles.aiSenderTime}>{timestamp}</Text> : null}
     </View>
   );
@@ -158,7 +158,12 @@ export default function AiChatbotScreen() {
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const subShow = Keyboard.addListener(showEvent, () => setIsKeyboardOpen(true));
+    const subShow = Keyboard.addListener(showEvent, () => {
+      setIsKeyboardOpen(true);
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 120);
+    });
     const subHide = Keyboard.addListener(hideEvent, () => setIsKeyboardOpen(false));
     return () => {
       subShow.remove();
@@ -233,11 +238,11 @@ export default function AiChatbotScreen() {
               <Sparkles size={20} color="#FFFFFF" strokeWidth={2} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>Smart Finance AI</Text>
+              <Text style={styles.headerTitle}>FinAI Assistant</Text>
               <View style={styles.statusRow}>
                 <View style={styles.onlineDot} />
                 <Text style={styles.headerSubtitle} numberOfLines={1}>
-                  Online • Terhubung ke Data Nov 2026
+                  Online • Terhubung ke {wallets.length} Dompet
                 </Text>
               </View>
             </View>
@@ -353,7 +358,8 @@ export default function AiChatbotScreen() {
               onBlur={() => setInputFocused(false)}
               onSubmitEditing={() => sendMessage(inputText)}
               returnKeyType="send"
-              multiline={false}
+              multiline
+              textAlignVertical="center"
             />
 
             <Pressable
@@ -595,21 +601,23 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     paddingHorizontal: 14,
     gap: 10,
   },
   textInput: {
     flex: 1,
-    minHeight: 46,
-    maxHeight: 96,
+    minHeight: 44,
+    maxHeight: 100,
     backgroundColor: Colors.canvas,
-    borderRadius: Radius.full,
+    borderRadius: 22,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     paddingHorizontal: 16,
+    paddingVertical: 10,
     fontFamily: FontFamily.regular,
     fontSize: 14,
+    lineHeight: 20,
     color: Colors.textPrimary,
   },
   textInputFocused: {

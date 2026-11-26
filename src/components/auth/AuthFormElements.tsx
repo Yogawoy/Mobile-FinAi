@@ -1,5 +1,13 @@
-﻿import React, { useState } from 'react';
 import {
+  Colors,
+  FontFamily,
+  TouchTarget,
+} from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Eye, EyeOff, Play } from 'lucide-react-native';
+import React, { type ComponentRef, forwardRef, useState } from 'react';
+import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -7,21 +15,14 @@ import {
   type TextInputProps,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Eye, EyeOff } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import {
-  Colors,
-  FontFamily,
-  Motion,
-  TouchTarget,
-} from '@/theme/tokens';
 
 interface AuthInputProps extends TextInputProps {
   icon: React.ReactNode;
@@ -31,14 +32,19 @@ interface AuthInputProps extends TextInputProps {
   onTogglePassword?: () => void;
 }
 
-export function AuthInput({
-  icon,
-  error,
-  isPassword = false,
-  showPassword = false,
-  onTogglePassword,
-  ...inputProps
-}: AuthInputProps) {
+export const AuthInput = forwardRef<ComponentRef<typeof TextInput>, AuthInputProps>(function AuthInput(
+  {
+    icon,
+    error,
+    isPassword = false,
+    showPassword = false,
+    onTogglePassword,
+    onFocus,
+    onBlur,
+    ...inputProps
+  },
+  ref
+) {
   const [focused, setFocused] = useState(false);
 
   return (
@@ -52,11 +58,18 @@ export function AuthInput({
       >
         <View style={styles.leadingIcon}>{icon}</View>
         <TextInput
+          ref={ref}
           style={styles.input}
           placeholderTextColor="#94A3B8"
           secureTextEntry={isPassword && !showPassword}
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+          onFocus={(e) => {
+            setFocused(true);
+            onFocus?.(e);
+          }}
+          onBlur={(e) => {
+            setFocused(false);
+            onBlur?.(e);
+          }}
           {...inputProps}
         />
         {isPassword && onTogglePassword ? (
@@ -64,12 +77,12 @@ export function AuthInput({
             onPress={onTogglePassword}
             accessibilityRole="button"
             accessibilityLabel={showPassword ? 'Sembunyikan password' : 'Lihat password'}
-            style={styles.eyeBtn}
+            style={({ pressed }) => [styles.eyeBtn, pressed && { opacity: 0.65 }]}
           >
             {showPassword ? (
-              <EyeOff size={19} color="#6B7280" strokeWidth={1.8} />
+              <EyeOff size={19} color="#64748B" strokeWidth={1.85} />
             ) : (
-              <Eye size={19} color="#6B7280" strokeWidth={1.8} />
+              <Eye size={19} color="#64748B" strokeWidth={1.85} />
             )}
           </Pressable>
         ) : null}
@@ -77,16 +90,21 @@ export function AuthInput({
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
-}
+});
 
 interface AuthPrimaryButtonProps {
   label: string;
+  loading?: boolean;
   onPress: () => void;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-export function AuthPrimaryButton({ label, onPress }: AuthPrimaryButtonProps) {
+export function AuthPrimaryButton({
+  label,
+  loading = false,
+  onPress,
+}: AuthPrimaryButtonProps) {
   const reducedMotion = useReducedMotion();
   const scale = useSharedValue(1);
 
@@ -97,27 +115,34 @@ export function AuthPrimaryButton({ label, onPress }: AuthPrimaryButtonProps) {
   return (
     <AnimatedPressable
       onPress={onPress}
+      disabled={loading}
       onPressIn={() => {
-        if (!reducedMotion) {
-          scale.value = withTiming(0.98, { duration: Motion.pressMs });
+        if (!reducedMotion && !loading) {
+          scale.value = withTiming(0.97, { duration: 100 });
         }
       }}
       onPressOut={() => {
         if (!reducedMotion) {
-          scale.value = withTiming(1, { duration: Motion.pressMs });
+          scale.value = withSpring(1, { damping: 16, stiffness: 260 });
         }
       }}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={[styles.primaryShadowWrap, animatedStyle]}
+      accessibilityState={{ busy: loading }}
+      style={[styles.primaryShadowWrap, animatedStyle, loading && { opacity: 0.9 }]}
     >
       <LinearGradient
-        colors={['#4B89FF', '#2563EB']}
+        colors={['#38BDF8', '#3B7AF5', '#1D4ED8']}
+        locations={[0, 0.42, 1]}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 0 }}
+        end={{ x: 1, y: 1 }}
         style={styles.primaryGradient}
       >
-        <Text style={styles.primaryBtnText}>{label}</Text>
+        {loading ? (
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        ) : (
+          <Text style={styles.primaryBtnText}>{label}</Text>
+        )}
       </LinearGradient>
     </AnimatedPressable>
   );
@@ -125,7 +150,7 @@ export function AuthPrimaryButton({ label, onPress }: AuthPrimaryButtonProps) {
 
 function GoogleIcon() {
   return (
-    <Svg width={22} height={22} viewBox="0 0 24 24">
+    <Svg width={21} height={21} viewBox="0 0 24 24">
       <Path
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
         fill="#4285F4"
@@ -148,12 +173,52 @@ function GoogleIcon() {
 
 function AppleIcon() {
   return (
-    <Svg width={21} height={21} viewBox="0 0 24 24">
+    <Svg width={20} height={20} viewBox="0 0 24 24">
       <Path
         d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"
         fill="#111827"
       />
     </Svg>
+  );
+}
+
+function SocialTileButton({
+  onPress,
+  accessibilityLabel,
+  extraStyle,
+  children,
+}: {
+  onPress: () => void;
+  accessibilityLabel: string;
+  extraStyle?: object;
+  children: React.ReactNode;
+}) {
+  const reducedMotion = useReducedMotion();
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={() => {
+        if (!reducedMotion) {
+          scale.value = withTiming(0.97, { duration: 100 });
+        }
+      }}
+      onPressOut={() => {
+        if (!reducedMotion) {
+          scale.value = withSpring(1, { damping: 16, stiffness: 260 });
+        }
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      style={[styles.socialBox, extraStyle, animatedStyle]}
+    >
+      {children}
+    </AnimatedPressable>
   );
 }
 
@@ -167,23 +232,30 @@ export function AuthSocialRow({ onDemoPress }: { onDemoPress: () => void }) {
       </View>
 
       <View style={styles.socialRow}>
-        <Pressable
+        <SocialTileButton
           onPress={onDemoPress}
-          accessibilityRole="button"
           accessibilityLabel="Lanjutkan dengan Google"
-          style={({ pressed }) => [styles.socialBox, pressed && styles.socialBoxPressed]}
         >
           <GoogleIcon />
-        </Pressable>
+        </SocialTileButton>
 
-        <Pressable
+        <SocialTileButton
           onPress={onDemoPress}
-          accessibilityRole="button"
           accessibilityLabel="Lanjutkan dengan Apple"
-          style={({ pressed }) => [styles.socialBox, pressed && styles.socialBoxPressed]}
         >
           <AppleIcon />
-        </Pressable>
+        </SocialTileButton>
+
+        <SocialTileButton
+          onPress={onDemoPress}
+          accessibilityLabel="Masuk dengan Mode Demo"
+          extraStyle={styles.demoBox}
+        >
+          <Play size={16} color="#3B7AF5" fill="#3B7AF5" strokeWidth={2} />
+          <Text style={styles.demoLabel} numberOfLines={1}>
+            Demo
+          </Text>
+        </SocialTileButton>
       </View>
     </View>
   );
@@ -196,24 +268,33 @@ const styles = StyleSheet.create({
   inputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: '#E8EDF5',
-    borderRadius: 16,
+    borderColor: '#E2E8F0',
+    borderRadius: 15,
     height: 54,
-    paddingLeft: 16,
-    paddingRight: 6,
+    paddingLeft: 14,
+    paddingRight: 4,
   },
   inputBoxFocused: {
+    backgroundColor: '#FFFFFF',
     borderColor: '#3B7AF5',
     borderWidth: 1.5,
+    shadowColor: '#3B7AF5',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 2,
   },
   inputBoxError: {
-    borderColor: Colors.expense,
-    backgroundColor: Colors.expenseSoft,
+    borderColor: '#EF4444',
+    backgroundColor: '#FFFFFF',
   },
   leadingIcon: {
-    marginRight: 12,
+    width: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
   },
   input: {
     flex: 1,
@@ -221,32 +302,35 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     color: Colors.textPrimary,
     height: '100%',
+    paddingRight: 4,
   },
   eyeBtn: {
-    minWidth: TouchTarget.minSize,
-    minHeight: TouchTarget.minSize,
+    width: TouchTarget.minSize,
+    height: TouchTarget.minSize,
     alignItems: 'center',
     justifyContent: 'center',
   },
   errorText: {
     fontFamily: FontFamily.medium,
     fontSize: 12,
-    color: Colors.expenseText,
+    color: '#EF4444',
     paddingLeft: 4,
   },
   primaryShadowWrap: {
-    borderRadius: 16,
-    shadowColor: '#3B7AF5',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 5,
+    borderRadius: 15,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 4,
   },
   primaryGradient: {
     height: 52,
-    borderRadius: 16,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.24)',
   },
   primaryBtnText: {
     fontFamily: FontFamily.semibold,
@@ -254,18 +338,18 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   socialSection: {
-    marginTop: 22,
-    gap: 18,
+    marginTop: 2,
   },
   dividerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    marginVertical: 22,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#E8EDF5',
+    backgroundColor: '#E2E8F0',
   },
   dividerText: {
     fontFamily: FontFamily.regular,
@@ -278,21 +362,33 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   socialBox: {
-    width: 68,
-    height: 54,
-    borderRadius: 16,
+    width: 72,
+    height: 52,
+    borderRadius: 14,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E8EDF5',
+    borderColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.05,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 2,
   },
+  demoBox: {
+    gap: 2,
+    borderColor: '#DBEAFE',
+    backgroundColor: '#F8FAFF',
+  },
+  demoLabel: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 10.5,
+    color: '#3B7AF5',
+    letterSpacing: 0.1,
+  },
   socialBoxPressed: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F1F5F9',
+    transform: [{ scale: 0.97 }],
   },
 });

@@ -155,7 +155,7 @@ export function ProfileSheet({
       <ConfirmDialog
         visible={logoutConfirmOpen}
         title="Keluar dari Akun?"
-        message="Anda akan kembali ke halaman masuk Smart Finance."
+        message="Anda akan kembali ke halaman masuk FinAI."
         confirmLabel="Keluar"
         variant="danger"
         icon="logout"

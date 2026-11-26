@@ -13,6 +13,7 @@ import {
   QuickTransactionSheet,
   type QuickTransactionSubmitPayload,
 } from '@/components/transactions/QuickTransactionSheet';
+import { FinAiLogoMark } from '@/components/brand/FinAiLogo';
 import { BUDGET_RULE_META, useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
 import {
@@ -105,6 +106,8 @@ export default function HomeTabScreen() {
   } = useFinance();
 
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const scrollYRef = useRef(0);
+  const measureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const balanceRef = useRef<ComponentRef<typeof View>>(null);
   const actionsRef = useRef<ComponentRef<typeof View>>(null);
   const summaryRef = useRef<ComponentRef<typeof View>>(null);
@@ -118,37 +121,40 @@ export default function HomeTabScreen() {
 
   const measureTutorialStep = useCallback(
     (stepIdx: number) => {
-      setTutorialTargetRect(null);
+      if (measureTimerRef.current) {
+        clearTimeout(measureTimerRef.current);
+        measureTimerRef.current = null;
+      }
 
       if (stepIdx === 4) {
-        setTimeout(() => {
-          requestAnimationFrame(() => {
-            if (aiButtonRect) {
-              setTutorialTargetRect({
-                x: aiButtonRect.x,
-                y: aiButtonRect.y,
-                width: aiButtonRect.width,
-                height: aiButtonRect.height,
-                padding: 8,
-                isCircle: true,
-              });
-            } else {
-              setTutorialTargetRect({
-                x: width / 2 - 30,
-                y: height - (insets.bottom + 90),
-                width: 60,
-                height: 60,
-                padding: 8,
-                isCircle: true,
-              });
-            }
-          });
-        }, 160);
+        requestAnimationFrame(() => {
+          if (aiButtonRect) {
+            setTutorialTargetRect({
+              x: aiButtonRect.x,
+              y: aiButtonRect.y,
+              width: aiButtonRect.width,
+              height: aiButtonRect.height,
+              padding: 8,
+              isCircle: true,
+            });
+          } else {
+            setTutorialTargetRect({
+              x: width / 2 - 30,
+              y: height - (insets.bottom + 90),
+              width: 60,
+              height: 60,
+              padding: 8,
+              isCircle: true,
+            });
+          }
+        });
         return;
       }
 
       const measureTarget = (
-        ref: React.RefObject<ComponentRef<typeof View> | null>
+        ref: React.RefObject<ComponentRef<typeof View> | null>,
+        padding = 8,
+        borderRadius = 16
       ) => {
         requestAnimationFrame(() => {
           ref.current?.measureInWindow((x, y, w, h) => {
@@ -158,8 +164,8 @@ export default function HomeTabScreen() {
                 y,
                 width: w,
                 height: h,
-                padding: 8,
-                borderRadius: 16,
+                padding,
+                borderRadius,
               });
             }
           });
@@ -167,17 +173,27 @@ export default function HomeTabScreen() {
       };
 
       if (stepIdx === 3) {
-        scrollRef.current?.scrollTo({ y: 240, animated: true });
-        setTimeout(() => measureTarget(shortcutsRef), 360);
+        if (scrollYRef.current >= 140) {
+          measureTarget(shortcutsRef, 4, 22);
+        } else {
+          scrollRef.current?.scrollTo({ y: 220, animated: true });
+          measureTimerRef.current = setTimeout(
+            () => measureTarget(shortcutsRef, 4, 22),
+            420
+          );
+        }
         return;
       }
 
-      scrollRef.current?.scrollTo({ y: 0, animated: true });
-      setTimeout(() => {
-        if (stepIdx === 0) measureTarget(balanceRef);
-        else if (stepIdx === 1) measureTarget(actionsRef);
-        else if (stepIdx === 2) measureTarget(summaryRef);
-      }, 360);
+      const targetRef =
+        stepIdx === 0 ? balanceRef : stepIdx === 1 ? actionsRef : summaryRef;
+
+      if (scrollYRef.current <= 6) {
+        measureTarget(targetRef);
+      } else {
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+        measureTimerRef.current = setTimeout(() => measureTarget(targetRef), 420);
+      }
     },
     [width, height, insets.bottom, aiButtonRect, setTutorialTargetRect]
   );
@@ -247,6 +263,28 @@ export default function HomeTabScreen() {
     totalBudgetLimit > 0
       ? Math.min(100, Math.round((totalBudgetSpent / totalBudgetLimit) * 100))
       : 0;
+
+  const aiHealth = useMemo(() => {
+    if (!hasCompletedSetup) {
+      return {
+        score: INITIAL_SUMMARY.aiScore,
+        status: 'Sehat',
+        toneColor: '#059669',
+        toneBg: '#ECFDF5',
+        insight: 'Arus kas terkendali. Cek proyeksi saldo akhir bulan.',
+      };
+    }
+    const overDaily = remainingDailySafeLimit < 0;
+    const overBudget = budgetPct >= 90;
+    const score = overDaily ? 64 : overBudget ? 72 : 90;
+    const status = overDaily ? 'Waspada' : overBudget ? 'Hati-hati' : 'Optimal';
+    const toneColor = overDaily ? '#DC2626' : overBudget ? '#D97706' : '#059669';
+    const toneBg = overDaily ? '#FEF2F2' : overBudget ? '#FFFBEB' : '#ECFDF5';
+    const insight = overDaily
+      ? `Melebihi batas harian ${formatIDR(Math.abs(remainingDailySafeLimit))}. Ketuk untuk analisis.`
+      : `Sisa aman hari ini ${formatIDR(remainingDailySafeLimit)} • Cek proyeksi bulan ini.`;
+    return { score, status, toneColor, toneBg, insight };
+  }, [hasCompletedSetup, remainingDailySafeLimit, budgetPct]);
 
   const openQuickSheet = (mode: TransactionMode) => {
     setSheetMode(mode);
@@ -381,6 +419,10 @@ export default function HomeTabScreen() {
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          scrollYRef.current = e.nativeEvent.contentOffset.y;
+        }}
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: 112 + insets.bottom },
@@ -396,11 +438,11 @@ export default function HomeTabScreen() {
           {/* Compact Topbar */}
           <View style={styles.topbar}>
             <View style={styles.brandGroup}>
-              <View style={styles.miniLogo}>
-                <Wallet size={16} color="#FFFFFF" strokeWidth={2} />
+              <View style={[styles.miniLogo, { backgroundColor: '#FFFFFF' }]}>
+                <FinAiLogoMark size={22} />
               </View>
               <View>
-                <Text style={styles.brandTitle}>Smart Finance</Text>
+                <Text style={styles.brandTitle}>FinAI</Text>
                 <Text style={styles.greetingText}>Halo, {firstName}</Text>
               </View>
             </View>
@@ -547,7 +589,7 @@ export default function HomeTabScreen() {
           entering={FadeInDown.duration(360).easing(Easing.out(Easing.cubic))}
           style={styles.overlapCard}
         >
-          <View ref={summaryRef} collapsable={false}>
+          <View ref={summaryRef} collapsable={false} style={styles.summaryInner}>
             <View style={styles.summaryTopRow}>
               <View style={styles.summaryCol}>
                 <Text style={styles.summaryTitle}>Pemasukan</Text>
@@ -577,12 +619,28 @@ export default function HomeTabScreen() {
             </View>
 
             <View style={styles.budgetBlock}>
-              <View style={styles.budgetRow}>
-                <Text style={styles.budgetLabel}>{INITIAL_SUMMARY.budgetLabel}</Text>
-                <Text style={[styles.budgetPctText, Typography.tabularNums]}>
-                  {budgetPct}% terpakai
-                </Text>
-              </View>
+              {budgets.length === 0 ? (
+                <Pressable
+                  onPress={() =>
+                    router.push({ pathname: '/(tabs)/budgets', params: { tab: 'budget' } })
+                  }
+                  accessibilityRole="button"
+                  accessibilityLabel="Atur anggaran bulan ini"
+                  style={({ pressed }) => [styles.budgetRow, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.budgetLabel}>Belum ada anggaran bulan ini</Text>
+                  <Text style={[styles.budgetPctText, { color: Colors.primary }]}>
+                    Atur sekarang ›
+                  </Text>
+                </Pressable>
+              ) : (
+                <View style={styles.budgetRow}>
+                  <Text style={styles.budgetLabel}>{INITIAL_SUMMARY.budgetLabel}</Text>
+                  <Text style={[styles.budgetPctText, Typography.tabularNums]}>
+                    {budgetPct}% terpakai
+                  </Text>
+                </View>
+              )}
               <View style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${budgetPct}%` }]} />
               </View>
@@ -591,22 +649,47 @@ export default function HomeTabScreen() {
             <Pressable
               onPress={() => router.push('/forecast')}
               accessibilityRole="button"
-              accessibilityLabel="Lihat Prediksi Arus Kas"
-              style={({ pressed }) => [styles.aiStrip, pressed && { opacity: 0.82 }]}
+              accessibilityLabel="Lihat Skor AI dan Prediksi Arus Kas"
+              style={({ pressed }) => [
+                styles.aiStrip,
+                pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
+              ]}
             >
-              <View style={styles.aiScorePill}>
-                <Text style={[styles.aiScoreText, Typography.tabularNums]}>
-                  {hasCompletedSetup ? 'Proyeksi' : `Skor AI ${INITIAL_SUMMARY.aiScore}`}
+              <View style={[styles.aiScoreBadge, { backgroundColor: aiHealth.toneBg }]}>
+                <Text
+                  style={[styles.aiScoreNumber, Typography.tabularNums, { color: aiHealth.toneColor }]}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={1.1}
+                >
+                  {aiHealth.score}
+                </Text>
+                <Text
+                  style={[styles.aiScoreUnit, { color: aiHealth.toneColor }]}
+                  numberOfLines={1}
+                  maxFontSizeMultiplier={1.1}
+                >
+                  SKOR
                 </Text>
               </View>
-              <Text style={styles.aiStripText} numberOfLines={1}>
-                {hasCompletedSetup
-                  ? remainingDailySafeLimit >= 0
-                    ? `Sisa aman hari ini ${formatIDR(remainingDailySafeLimit)} • Pola ${BUDGET_RULE_META[userProfile.budgetRule].label}`
-                    : `Melebihi batas harian ${formatIDR(Math.abs(remainingDailySafeLimit))}`
-                  : INITIAL_SUMMARY.aiInsight}
-              </Text>
-              <ChevronRight size={16} color={Colors.primary} strokeWidth={2.2} />
+
+              <View style={styles.aiStripBody}>
+                <View style={styles.aiStripHeader}>
+                  <Sparkles size={13} color={Colors.primary} strokeWidth={2.2} />
+                  <Text style={styles.aiStripTitle}>Skor AI</Text>
+                  <View style={[styles.aiStatusTag, { backgroundColor: aiHealth.toneBg }]}>
+                    <Text style={[styles.aiStatusTagText, { color: aiHealth.toneColor }]}>
+                      {aiHealth.status}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.aiStripText} numberOfLines={2}>
+                  {aiHealth.insight}
+                </Text>
+              </View>
+
+              <View style={styles.aiChevronCircle}>
+                <ChevronRight size={15} color={Colors.primary} strokeWidth={2.3} />
+              </View>
             </Pressable>
           </View>
         </Animated.View>
@@ -667,9 +750,8 @@ export default function HomeTabScreen() {
         {/* SECTION 4 — 4x2 QUICK SHORTCUTS GRID */}
         <Animated.View
           entering={FadeInDown.delay(140).duration(360).easing(Easing.out(Easing.cubic))}
-          style={styles.shortcutsCard}
         >
-          <View ref={shortcutsRef} collapsable={false}>
+          <View ref={shortcutsRef} collapsable={false} style={styles.shortcutsCard}>
             {shortcutRows.map((row, rowIdx) => (
               <View
                 key={`row-${rowIdx}`}
@@ -1011,9 +1093,11 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: 16,
-    gap: 14,
+    padding: 18,
     ...CARD_SHADOW,
+  },
+  summaryInner: {
+    gap: 16,
   },
   summaryTopRow: {
     flexDirection: 'row',
@@ -1021,13 +1105,13 @@ const styles = StyleSheet.create({
   },
   summaryCol: {
     flex: 1,
-    gap: 3,
+    gap: 5,
   },
   verticalDivider: {
     width: 1,
-    height: 34,
-    backgroundColor: '#F1F5F9',
-    marginHorizontal: 12,
+    height: 38,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 14,
   },
   summaryTitle: {
     fontFamily: FontFamily.medium,
@@ -1036,23 +1120,26 @@ const styles = StyleSheet.create({
   },
   incomeAmount: {
     fontFamily: FontFamily.bold,
-    fontSize: 16,
+    fontSize: 16.5,
     color: Colors.income,
   },
   expenseAmount: {
     fontFamily: FontFamily.bold,
-    fontSize: 16,
+    fontSize: 16.5,
     color: Colors.expense,
   },
   budgetBlock: {
-    gap: 6,
+    gap: 8,
   },
   budgetRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   budgetLabel: {
+    flex: 1,
+    flexShrink: 1,
     fontFamily: FontFamily.medium,
     fontSize: 12.5,
     color: Colors.textPrimary,
@@ -1076,27 +1163,74 @@ const styles = StyleSheet.create({
   aiStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    padding: 10,
+    gap: 12,
+    backgroundColor: '#F4F8FF',
+    borderWidth: 1,
+    borderColor: '#DCE8FF',
+    borderRadius: 16,
+    padding: 12,
   },
-  aiScorePill: {
-    backgroundColor: Colors.primarySoft,
+  aiScoreBadge: {
+    minWidth: 48,
+    minHeight: 48,
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 14,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  aiScoreText: {
+  aiScoreNumber: {
     fontFamily: FontFamily.bold,
-    fontSize: 11,
-    color: Colors.primary,
+    fontSize: 17,
+    lineHeight: 20,
+  },
+  aiScoreUnit: {
+    fontFamily: FontFamily.bold,
+    fontSize: 9.5,
+    letterSpacing: 0.4,
+    marginTop: 1,
+  },
+  aiStripBody: {
+    flex: 1,
+    minWidth: 0,
+    flexShrink: 1,
+    gap: 4,
+  },
+  aiStripHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  aiStripTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 12.5,
+    color: Colors.textPrimary,
+  },
+  aiStatusTag: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 99,
+  },
+  aiStatusTagText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 10.5,
   },
   aiStripText: {
-    flex: 1,
-    fontFamily: FontFamily.medium,
+    fontFamily: FontFamily.regular,
     fontSize: 12,
+    lineHeight: 16.5,
     color: Colors.textSecondary,
+  },
+  aiChevronCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DCE8FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { useToast } from '@/components/ui/ToastProvider';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { WALLET_THEMES, type WalletThemeKey } from '@/constants/walletTheme';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -38,7 +38,9 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
   const [accountLast4, setAccountLast4] = useState('');
   const [balance, setBalance] = useState('');
   const [color, setColor] = useState<WalletThemeKey>('periwinkle');
+  const { showToast } = useToast();
   const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!visible) return;
@@ -60,14 +62,15 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
   }, [visible, initialWallet]);
 
   const handleSubmit = async () => {
+    setFormError(null);
     if (name.trim().length < 2) {
-      Alert.alert('Nama dompet terlalu pendek', 'Minimal 2 karakter.');
+      setFormError('Nama dompet minimal 2 karakter.');
       return;
     }
 
     const parsedBalance = Number((balance || '0').replace(/[^0-9]/g, ''));
     if (!isEditing && (!Number.isFinite(parsedBalance) || parsedBalance < 0)) {
-      Alert.alert('Saldo awal tidak valid', 'Saldo minimal 0.');
+      setFormError('Saldo awal minimal 0.');
       return;
     }
 
@@ -94,10 +97,11 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
           icon,
         });
       }
+      showToast(isEditing ? 'Dompet diperbarui' : 'Dompet baru dibuat');
       onSaved();
       onClose();
     } catch (err) {
-      Alert.alert('Gagal menyimpan dompet', extractErrorMessage(err));
+      setFormError(extractErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -194,6 +198,12 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
             </View>
           </ScrollView>
 
+          {formError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{formError}</Text>
+            </View>
+          ) : null}
+
           <TouchableOpacity
             style={[styles.submitBtn, submitting && { opacity: 0.7 }]}
             onPress={handleSubmit}
@@ -214,6 +224,20 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
 }
 
 const styles = StyleSheet.create({
+  errorBanner: {
+    marginTop: 10,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  errorBannerText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
   backdrop: {
     flex: 1,
     backgroundColor: 'rgba(36, 38, 54, 0.45)',

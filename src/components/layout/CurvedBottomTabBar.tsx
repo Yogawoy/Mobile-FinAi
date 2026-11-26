@@ -312,15 +312,19 @@ export function CurvedBottomTabBar({
           style={[styles.aiFloatingBtn, { left: width / 2 - AI_BTN_SIZE / 2 }]}
         >
           <Animated.View style={aiAnimatedStyle}>
-            <View ref={aiBtnRef} collapsable={false} onLayout={measureAiButton}>
+            <View
+              ref={aiBtnRef}
+              collapsable={false}
+              onLayout={measureAiButton}
+              style={[styles.aiGradientCircle, aiMeta.isFocused && styles.aiActiveRing]}
+            >
               <LinearGradient
                 colors={['#4B89FF', '#3B7AF5', '#2563EB']}
                 start={{ x: 0.1, y: 0 }}
                 end={{ x: 0.9, y: 1 }}
-                style={[styles.aiGradientCircle, aiMeta.isFocused && styles.aiActiveRing]}
-              >
-                <Sparkles size={26} color="#FFFFFF" strokeWidth={2} />
-              </LinearGradient>
+                style={StyleSheet.absoluteFill}
+              />
+              <Sparkles size={26} color="#FFFFFF" strokeWidth={2} />
             </View>
           </Animated.View>
         </Pressable>
@@ -346,7 +350,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.07,
     shadowRadius: 16,
-    elevation: 6,
   },
   tabsRow: {
     position: 'absolute',
@@ -385,18 +388,22 @@ const styles = StyleSheet.create({
   aiFloatingBtn: {
     position: 'absolute',
     top: 6,
+    width: AI_BTN_SIZE,
+    height: AI_BTN_SIZE,
     zIndex: 20,
-    elevation: 20,
+    elevation: 10,
     borderRadius: AI_BTN_SIZE / 2,
+    backgroundColor: '#2563EB',
     shadowColor: '#2563EB',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.38,
+    shadowOpacity: 0.35,
     shadowRadius: 12,
   },
   aiGradientCircle: {
     width: AI_BTN_SIZE,
     height: AI_BTN_SIZE,
     borderRadius: AI_BTN_SIZE / 2,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
   },

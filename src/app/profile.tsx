@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CategoryManagerSheet } from '@/components/modals/CategoryManagerSheet';
 import { RecurringBillsSheet } from '@/components/modals/RecurringBillsSheet';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FinAiLogoMark } from '@/components/brand/FinAiLogo';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
@@ -211,7 +212,7 @@ export default function ProfileScreen() {
             <Text style={styles.userName}>{name}</Text>
             <Text style={styles.userEmail}>{email}</Text>
             <View style={styles.memberPill}>
-              <Text style={styles.memberPillText}>Member Smart Finance • Aktif</Text>
+              <Text style={styles.memberPillText}>Member FinAI • Aktif</Text>
             </View>
           </View>
         </LinearGradient>
@@ -365,16 +366,16 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* GRUP 3: TENTANG SMART FINANCE */}
+          {/* GRUP 3: TENTANG FINAI */}
           <View style={styles.groupBlock}>
-            <Text style={styles.groupTitle}>Tentang Smart Finance</Text>
+            <Text style={styles.groupTitle}>Tentang FinAI</Text>
             <View style={styles.menuCard}>
               <View style={styles.aboutRow}>
-                <View style={[styles.iconBox, { backgroundColor: '#EBF2FF' }]}>
-                  <Info size={18} color="#3B7AF5" strokeWidth={1.9} />
+                <View style={[styles.iconBox, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E2E8F0' }]}>
+                  <FinAiLogoMark size={24} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.aboutTitle}>Smart Finance Mobile v1.0</Text>
+                  <Text style={styles.aboutTitle}>FinAI Mobile v1.0</Text>
                   <Text style={styles.aboutSub}>
                     Cloud Computing • Arsitektur Decoupled (Expo + Express + Gemini AI)
                   </Text>
@@ -547,7 +548,7 @@ export default function ProfileScreen() {
       <ConfirmDialog
         visible={logoutConfirmOpen}
         title="Keluar dari Akun?"
-        message="Anda perlu masuk kembali untuk mengakses data keuangan Smart Finance."
+        message="Anda perlu masuk kembali untuk mengakses data keuangan FinAI."
         confirmLabel="Keluar"
         variant="danger"
         icon="logout"

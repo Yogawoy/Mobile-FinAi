@@ -267,7 +267,7 @@ const WALLET_BALANCE_PRESETS = [
 const STEP_HEADERS: Record<SetupStep, { title: string; subtitle: string }> = {
   1: {
     title: 'Apa tantangan keuanganmu saat ini?',
-    subtitle: 'Membantu Smart Finance menyesuaikan pengingat & saran AI untukmu.',
+    subtitle: 'Membantu FinAI menyesuaikan pengingat & saran AI untukmu.',
   },
   2: {
     title: 'Atur penghasilan & pola anggaran',
@@ -1336,12 +1336,12 @@ export default function SetupWizardScreen() {
             pressedScale={0.98}
             accessibilityRole="button"
             accessibilityLabel={
-              step === 4 ? 'Mulai Pakai Smart Finance' : 'Lanjut'
+              step === 4 ? 'Mulai Pakai FinAI' : 'Lanjut'
             }
             style={styles.ctaButton}
           >
             <Text style={styles.ctaButtonText} numberOfLines={1}>
-              {step === 4 ? 'Mulai Pakai Smart Finance' : 'Lanjut'}
+              {step === 4 ? 'Mulai Pakai FinAI' : 'Lanjut'}
             </Text>
             <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.2} />
           </TactilePressable>
