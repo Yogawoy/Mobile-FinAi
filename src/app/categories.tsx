@@ -31,6 +31,7 @@ import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance, type ManagedCategory } from '@/context/FinanceContext';
 import { type CategoryIconKey } from '@/lib/mockData';
+import { categoryService } from '@/services/category.service';
 import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 
 type CategoryType = 'EXPENSE' | 'INCOME';
@@ -76,7 +77,7 @@ export default function CategoriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
-  const { categories, setCategories, transactions } = useFinance();
+  const { categories, setCategories, transactions, refreshAllData } = useFinance();
 
   const [activeType, setActiveType] = useState<CategoryType>('EXPENSE');
 
@@ -130,13 +131,14 @@ export default function CategoriesScreen() {
     setSheetOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmed = label.trim();
     if (!trimmed) {
       showToast('Masukkan nama kategori', 'error');
       return;
     }
     const palette = COLOR_SWATCHES[colorIdx];
+    setSheetOpen(false);
 
     if (editingCat) {
       setCategories((prev) =>
@@ -153,7 +155,17 @@ export default function CategoriesScreen() {
             : c
         )
       );
-      showToast(`Kategori "${trimmed}" diperbarui`);
+      try {
+        await categoryService.updateCategory(editingCat.id, {
+          name: trimmed,
+          icon: iconKey,
+          color: palette.color,
+        });
+        await refreshAllData();
+        showToast(`Kategori "${trimmed}" diperbarui`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Gagal memperbarui kategori', 'error');
+      }
     } else {
       const nextCat: ManagedCategory = {
         id: `cat-${Date.now()}`,
@@ -165,9 +177,19 @@ export default function CategoriesScreen() {
         isDefault: false,
       };
       setCategories((prev) => [nextCat, ...prev]);
-      showToast(`Kategori "${trimmed}" ditambahkan`);
+      try {
+        await categoryService.createCategory({
+          name: trimmed,
+          type: formType,
+          icon: iconKey,
+          color: palette.color,
+        });
+        await refreshAllData();
+        showToast(`Kategori "${trimmed}" ditambahkan`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Gagal menambah kategori', 'error');
+      }
     }
-    setSheetOpen(false);
   };
 
   return (
@@ -423,12 +445,21 @@ export default function CategoriesScreen() {
         variant="danger"
         icon="trash"
         onCancel={() => setDeletingCat(null)}
-        onConfirm={() => {
+        onConfirm={async () => {
           if (deletingCat) {
-            setCategories((prev) => prev.filter((c) => c.id !== deletingCat.id));
-            showToast(`Kategori "${deletingCat.label}" dihapus`);
+            const target = deletingCat;
+            setDeletingCat(null);
+            setCategories((prev) => prev.filter((c) => c.id !== target.id));
+            try {
+              await categoryService.deleteCategory(target.id);
+              await refreshAllData();
+              showToast(`Kategori "${target.label}" dihapus`);
+            } catch (err) {
+              showToast(err instanceof Error ? err.message : 'Gagal menghapus kategori', 'error');
+            }
+          } else {
+            setDeletingCat(null);
           }
-          setDeletingCat(null);
         }}
       />
     </View>

@@ -46,8 +46,11 @@ import {
   GoalRealizeSheet,
   type GoalRealizePayload,
 } from '@/components/budgets/GoalRealizeSheet';
+import { useToast } from '@/components/ui/ToastProvider';
 import { BUDGET_RULE_META, useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
+import { budgetService } from '@/services/budget.service';
+import { goalService } from '@/services/goal.service';
 import { calculateGoalRecommendation } from '@/lib/goalCalculator';
 import {
   type BudgetIconKey,
@@ -173,15 +176,19 @@ export default function BudgetsTabScreen() {
     }
   }, [tab]);
 
+  const { showToast } = useToast();
   const {
     userProfile,
     hasCompletedSetup,
     wallets,
     setWallets,
+    categories,
     budgets,
     setBudgets,
     goals,
     setGoals,
+    recordTransaction,
+    refreshAllData,
   } = useFinance();
 
   const [budgetSheetVisible, setBudgetSheetVisible] = useState(false);
@@ -222,7 +229,12 @@ export default function BudgetsTabScreen() {
     }
   };
 
-  const handleBudgetSubmit = (payload: BudgetFormSubmitPayload) => {
+  const handleBudgetSubmit = async (payload: BudgetFormSubmitPayload) => {
+    const now = new Date();
+    const matchedCat = categories.find(
+      (c) => c.type === 'EXPENSE' && c.label.toLowerCase() === payload.name.toLowerCase()
+    ) ?? categories.find((c) => c.type === 'EXPENSE');
+
     if (payload.id) {
       setBudgets((prev) =>
         prev.map((b) =>
@@ -237,6 +249,20 @@ export default function BudgetsTabScreen() {
             : b
         )
       );
+      if (matchedCat) {
+        try {
+          await budgetService.upsertBudget({
+            categoryId: matchedCat.id,
+            month: now.getMonth() + 1,
+            year: now.getFullYear(),
+            limitAmount: payload.limit,
+            alertThresholdPct: payload.alertThresholdPct,
+          });
+          await refreshAllData();
+        } catch (err) {
+          showToast(err instanceof Error ? err.message : 'Gagal memperbarui anggaran', 'error');
+        }
+      }
       return;
     }
 
@@ -249,13 +275,33 @@ export default function BudgetsTabScreen() {
       alertThresholdPct: payload.alertThresholdPct,
     };
     setBudgets((prev) => [newBudget, ...prev]);
+    if (matchedCat) {
+      try {
+        await budgetService.upsertBudget({
+          categoryId: matchedCat.id,
+          month: now.getMonth() + 1,
+          year: now.getFullYear(),
+          limitAmount: payload.limit,
+          alertThresholdPct: payload.alertThresholdPct,
+        });
+        await refreshAllData();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Gagal menyimpan anggaran', 'error');
+      }
+    }
   };
 
-  const handleBudgetDelete = (budget: BudgetItem) => {
+  const handleBudgetDelete = async (budget: BudgetItem) => {
     setBudgets((prev) => prev.filter((b) => b.id !== budget.id));
+    try {
+      await budgetService.deleteBudget(budget.id);
+      await refreshAllData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal menghapus anggaran', 'error');
+    }
   };
 
-  const handleGoalCreate = (payload: GoalCreatePayload) => {
+  const handleGoalCreate = async (payload: GoalCreatePayload) => {
     const newGoal: GoalItem = {
       id: `goal-${Date.now()}`,
       name: payload.name,
@@ -269,9 +315,24 @@ export default function BudgetsTabScreen() {
       isRealized: false,
     };
     setGoals((prev) => [newGoal, ...prev]);
+    try {
+      const parsedDate = Date.parse(payload.deadline);
+      const isoDeadline = Number.isNaN(parsedDate)
+        ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
+        : new Date(parsedDate).toISOString();
+      await goalService.createGoal({
+        name: payload.name,
+        targetAmount: payload.target,
+        currentAmount: 0,
+        deadline: isoDeadline,
+      });
+      await refreshAllData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal membuat target tabungan', 'error');
+    }
   };
 
-  const handleGoalContribute = (payload: GoalContributePayload) => {
+  const handleGoalContribute = async (payload: GoalContributePayload) => {
     setGoals((prev) =>
       prev.map((g) =>
         g.id === payload.goalId
@@ -281,21 +342,33 @@ export default function BudgetsTabScreen() {
     );
 
     if (payload.sourceWalletId !== payload.targetWalletId) {
-      setWallets((prev) =>
-        prev.map((w) => {
-          if (w.id === payload.sourceWalletId) {
-            return { ...w, balance: Math.max(0, w.balance - payload.amount) };
-          }
-          if (w.id === payload.targetWalletId) {
-            return { ...w, balance: w.balance + payload.amount };
-          }
-          return w;
-        })
-      );
+      const sourceWallet = wallets.find((w) => w.id === payload.sourceWalletId);
+      const targetWallet = wallets.find((w) => w.id === payload.targetWalletId);
+      recordTransaction({
+        title: `Setor Target Tabungan`,
+        categoryKey: 'wallet',
+        categoryLabel: 'Transfer',
+        walletId: payload.sourceWalletId,
+        walletName: sourceWallet?.name || 'Dompet',
+        targetWalletId: payload.targetWalletId,
+        targetWalletName: targetWallet?.name,
+        dateLabel: 'Baru saja',
+        amount: payload.amount,
+        type: 'TRANSFER',
+        iconBg: '#EBF2FF',
+        iconColor: '#3B7AF5',
+      });
+    }
+
+    try {
+      await goalService.contributeGoal(payload.goalId, payload.amount);
+      await refreshAllData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal menyetor ke target', 'error');
     }
   };
 
-  const handleGoalRealize = (payload: GoalRealizePayload) => {
+  const handleGoalRealize = async (payload: GoalRealizePayload) => {
     setGoals((prev) =>
       prev.map((g) =>
         g.id === payload.goalId ? { ...g, isRealized: true } : g
@@ -317,6 +390,13 @@ export default function BudgetsTabScreen() {
         return w;
       })
     );
+
+    try {
+      await goalService.updateGoal(payload.goalId, { status: 'COMPLETED' });
+      await refreshAllData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal merealisasikan target', 'error');
+    }
   };
 
   const summaryBarColor =

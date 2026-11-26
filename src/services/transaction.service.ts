@@ -1,53 +1,135 @@
-import { apiRequest } from '@/lib/api-client';
-import type {
-  CreateTransactionPayload,
-  Transaction,
-  TransactionListResponseData,
-  TransactionQuery,
-  UpdateTransactionPayload,
-  Wallet,
-} from '@/types/api';
+import { apiRequest } from '@/lib/api';
 
-function buildQuery(params?: TransactionQuery): string {
-  if (!params) return '';
-  const search = new URLSearchParams();
-  if (params.walletId) search.set('walletId', params.walletId);
-  if (params.type) search.set('type', params.type);
-  if (params.category) search.set('category', params.category);
-  if (params.startDate) search.set('startDate', params.startDate);
-  if (params.endDate) search.set('endDate', params.endDate);
-  if (params.limit !== undefined) search.set('limit', String(params.limit));
-  if (params.offset !== undefined) search.set('offset', String(params.offset));
-  const qs = search.toString();
-  return qs ? `?${qs}` : '';
+export interface BackendTransaction {
+  id: string;
+  userId: string;
+  walletId: string;
+  destinationWalletId: string | null;
+  categoryId: string | null;
+  recurringId: string | null;
+  type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  amount: number;
+  note: string | null;
+  transactionDate: string;
+  createdAt: string;
+  wallet: {
+    id: string;
+    name: string;
+    type: string;
+    color: string;
+  };
+  destinationWallet: {
+    id: string;
+    name: string;
+    type: string;
+    color: string;
+  } | null;
+  category: {
+    id: string;
+    name: string;
+    type: 'INCOME' | 'EXPENSE';
+    icon: string;
+    color: string;
+  } | null;
+}
+
+export interface TransactionQueryParams {
+  month?: number;
+  year?: number;
+  type?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  walletId?: string;
+  categoryId?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
 }
 
 export const transactionService = {
-  getTransactions(query?: TransactionQuery) {
-    return apiRequest<TransactionListResponseData>(`/api/transactions${buildQuery(query)}`);
+  getTransactions(params: TransactionQueryParams = {}) {
+    const search = new URLSearchParams();
+    if (params.month) search.set('month', String(params.month));
+    if (params.year) search.set('year', String(params.year));
+    if (params.type) search.set('type', params.type);
+    if (params.walletId) search.set('walletId', params.walletId);
+    if (params.categoryId) search.set('categoryId', params.categoryId);
+    if (params.search) search.set('search', params.search);
+    if (params.page) search.set('page', String(params.page));
+    if (params.limit) search.set('limit', String(params.limit));
+    const qs = search.toString();
+
+    return apiRequest<{
+      items: BackendTransaction[];
+      summary: {
+        totalIncome: number;
+        totalExpense: number;
+        netCashflow: number;
+      };
+    }>(`/transactions${qs ? `?${qs}` : ''}`);
   },
 
-  getTransactionById(id: string) {
-    return apiRequest<{ transaction: Transaction }>(`/api/transactions/${id}`);
-  },
-
-  createTransaction(payload: CreateTransactionPayload) {
-    return apiRequest<{ transaction: Transaction; wallet: Wallet }>('/api/transactions', {
+  createTransaction(payload: {
+    walletId: string;
+    destinationWalletId?: string | null;
+    categoryId?: string | null;
+    category?: string;
+    type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+    amount: number;
+    note?: string | null;
+    description?: string;
+    transactionDate?: string;
+  }) {
+    return apiRequest<BackendTransaction>('/transactions', {
       method: 'POST',
-      body: payload,
+      body: {
+        walletId: payload.walletId,
+        destinationWalletId: payload.destinationWalletId ?? null,
+        categoryId: payload.categoryId ?? null,
+        type: payload.type,
+        amount: payload.amount,
+        note: payload.note ?? payload.description ?? null,
+        transactionDate: payload.transactionDate ?? new Date().toISOString(),
+      },
     });
   },
 
-  updateTransaction(id: string, payload: UpdateTransactionPayload) {
-    return apiRequest<{ transaction: Transaction }>(`/api/transactions/${id}`, {
-      method: 'PATCH',
-      body: payload,
+  updateTransaction(
+    id: string,
+    payload: {
+      walletId?: string;
+      destinationWalletId?: string | null;
+      categoryId?: string | null;
+      category?: string;
+      type?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+      amount?: number;
+      note?: string | null;
+      description?: string;
+      transactionDate?: string;
+    }
+  ) {
+    return apiRequest<BackendTransaction>(`/transactions/${id}`, {
+      method: 'PUT',
+      body: {
+        ...(payload.walletId !== undefined ? { walletId: payload.walletId } : {}),
+        ...(payload.destinationWalletId !== undefined
+          ? { destinationWalletId: payload.destinationWalletId }
+          : {}),
+        ...(payload.categoryId !== undefined ? { categoryId: payload.categoryId } : {}),
+        ...(payload.type !== undefined ? { type: payload.type } : {}),
+        ...(payload.amount !== undefined ? { amount: payload.amount } : {}),
+        ...(payload.note !== undefined || payload.description !== undefined
+          ? { note: payload.note ?? payload.description ?? null }
+          : {}),
+        ...(payload.transactionDate !== undefined
+          ? { transactionDate: payload.transactionDate }
+          : {}),
+      },
     });
   },
 
   deleteTransaction(id: string) {
-    return apiRequest<{ message: string }>(`/api/transactions/${id}`, {
-      method: 'DELETE',
-    });
+    return apiRequest<{ deleted: boolean; transactionId: string }>(
+      `/transactions/${id}`,
+      { method: 'DELETE' }
+    );
   },
 };

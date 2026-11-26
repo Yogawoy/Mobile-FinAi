@@ -54,6 +54,7 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -98,8 +99,11 @@ export default function HomeTabScreen() {
     monthlyIncomeActual,
     monthlyExpenseActual,
     remainingDailySafeLimit,
+    sawHealth,
     recordTransaction,
     updateUserProfile,
+    isLoadingData,
+    refreshAllData,
     setTutorialVisible,
     setTutorialStep,
     setTutorialTargetRect,
@@ -265,26 +269,33 @@ export default function HomeTabScreen() {
       : 0;
 
   const aiHealth = useMemo(() => {
-    if (!hasCompletedSetup) {
+    if (!sawHealth || !sawHealth.hasEnoughData || sawHealth.healthScore === null) {
+      const txCount = sawHealth?.txCount ?? transactions.length;
       return {
-        score: INITIAL_SUMMARY.aiScore,
-        status: 'Sehat',
-        toneColor: '#059669',
-        toneBg: '#ECFDF5',
-        insight: 'Arus kas terkendali. Cek proyeksi saldo akhir bulan.',
+        scoreText: '--/100',
+        status: 'Belum Cukup Data',
+        toneColor: '#64748B',
+        toneBg: '#F1F5F9',
+        insight: `Catat ${txCount}/3 transaksi untuk membuka Skor Kesehatan SAW`,
       };
     }
-    const overDaily = remainingDailySafeLimit < 0;
-    const overBudget = budgetPct >= 90;
-    const score = overDaily ? 64 : overBudget ? 72 : 90;
-    const status = overDaily ? 'Waspada' : overBudget ? 'Hati-hati' : 'Optimal';
-    const toneColor = overDaily ? '#DC2626' : overBudget ? '#D97706' : '#059669';
-    const toneBg = overDaily ? '#FEF2F2' : overBudget ? '#FFFBEB' : '#ECFDF5';
-    const insight = overDaily
-      ? `Melebihi batas harian ${formatIDR(Math.abs(remainingDailySafeLimit))}. Ketuk untuk analisis.`
-      : `Sisa aman hari ini ${formatIDR(remainingDailySafeLimit)} • Cek proyeksi bulan ini.`;
-    return { score, status, toneColor, toneBg, insight };
-  }, [hasCompletedSetup, remainingDailySafeLimit, budgetPct]);
+
+    const colorMap = {
+      Strong: { color: '#059669', bg: '#ECFDF5' },
+      Stable: { color: '#2563EB', bg: '#EFF6FF' },
+      Warning: { color: '#D97706', bg: '#FFFBEB' },
+      Critical: { color: '#DC2626', bg: '#FEF2F2' },
+      INSUFFICIENT_DATA: { color: '#64748B', bg: '#F1F5F9' },
+    } as const;
+    const tone = colorMap[sawHealth.classification];
+    return {
+      scoreText: `${sawHealth.healthScore}`,
+      status: sawHealth.statusLabel,
+      toneColor: tone.color,
+      toneBg: tone.bg,
+      insight: `Klasifikasi ${sawHealth.classification} • Ketuk untuk lihat 4 kriteria SAW & proyeksi.`,
+    };
+  }, [sawHealth, transactions.length]);
 
   const openQuickSheet = (mode: TransactionMode) => {
     setSheetMode(mode);
@@ -419,6 +430,14 @@ export default function HomeTabScreen() {
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoadingData}
+            onRefresh={() => void refreshAllData()}
+            tintColor="#FFFFFF"
+            colors={['#3B7AF5']}
+          />
+        }
         scrollEventThrottle={16}
         onScroll={(e) => {
           scrollYRef.current = e.nativeEvent.contentOffset.y;
@@ -661,7 +680,7 @@ export default function HomeTabScreen() {
                   numberOfLines={1}
                   maxFontSizeMultiplier={1.1}
                 >
-                  {aiHealth.score}
+                  {aiHealth.scoreText}
                 </Text>
                 <Text
                   style={[styles.aiScoreUnit, { color: aiHealth.toneColor }]}

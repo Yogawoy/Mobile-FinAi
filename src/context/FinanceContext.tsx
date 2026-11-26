@@ -1,10 +1,6 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import { setSessionExpiredHandler, tokenStorage } from '@/lib/api';
 import {
   INITIAL_SUMMARY,
-  INITIAL_TRANSACTIONS,
-  INITIAL_WALLETS,
-  mockBudgets,
-  mockGoals,
   type BudgetIconKey,
   type BudgetItem,
   type CategoryIconKey,
@@ -12,6 +8,39 @@ import {
   type TransactionItem,
   type WalletItem,
 } from '@/lib/mockData';
+import { getWalletTheme, type WalletColorKey, type WalletTypeKey } from '@/lib/walletTheme';
+import {
+  aiService,
+  type BackendForecastResponse,
+  type SawHealthResult,
+} from '@/services/ai.service';
+import { authService, type BackendUser } from '@/services/auth.service';
+import { budgetService, type BackendBudget } from '@/services/budget.service';
+import { categoryService, type BackendCategory } from '@/services/category.service';
+import { goalService, type BackendGoal } from '@/services/goal.service';
+import {
+  notificationService,
+  type BackendNotification,
+} from '@/services/notification.service';
+import {
+  recurringService,
+  type BackendRecurring,
+} from '@/services/recurring.service';
+import {
+  transactionService,
+  type BackendTransaction,
+} from '@/services/transaction.service';
+import { walletService, type BackendWallet } from '@/services/wallet.service';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 export type BudgetRuleKey = '50_30_20' | '60_20_20' | '70_20_10';
 
@@ -21,7 +50,7 @@ export type FinancialChallengeKey =
   | 'inconsistent_saving'
   | 'messy_records';
 
-export const TODAY_DATE_GROUP = 'Hari Ini • 22 Nov 2026';
+export const TODAY_DATE_GROUP = 'Hari Ini';
 
 export const BUDGET_RULE_META: Record<
   BudgetRuleKey,
@@ -81,7 +110,10 @@ export interface CompleteSetupPayload {
   budgets: BudgetItem[];
 }
 
-export type NewTransactionInput = Omit<TransactionItem, 'id'> & { id?: string };
+export type NewTransactionInput = Omit<TransactionItem, 'id'> & {
+  id?: string;
+  categoryId?: string | null;
+};
 
 export interface TutorialTargetRect {
   x: number;
@@ -101,6 +133,7 @@ export interface ManagedCategory {
   iconBg: string;
   iconColor: string;
   isDefault: boolean;
+  transactionCount?: number;
 }
 
 export type RecurringFrequency = 'Bulanan' | 'Mingguan';
@@ -115,25 +148,12 @@ export interface RecurringScheduleItem {
   nextDueDate: string;
   active: boolean;
   iconKey: RecurringIconKey;
+  walletId?: string;
+  categoryId?: string | null;
 }
 
-export const INITIAL_MANAGED_CATEGORIES: ManagedCategory[] = [
-  { id: 'cat-1', label: 'Makanan', type: 'EXPENSE', iconKey: 'utensils', iconBg: '#EBF2FF', iconColor: '#3B7AF5', isDefault: true },
-  { id: 'cat-2', label: 'Transportasi', type: 'EXPENSE', iconKey: 'car', iconBg: '#FFFBEB', iconColor: '#F59E0B', isDefault: true },
-  { id: 'cat-3', label: 'Belanja', type: 'EXPENSE', iconKey: 'shopping', iconBg: '#F0FDFA', iconColor: '#0D9488', isDefault: true },
-  { id: 'cat-4', label: 'Tagihan', type: 'EXPENSE', iconKey: 'zap', iconBg: '#FEF2F2', iconColor: '#EF4444', isDefault: true },
-  { id: 'cat-5', label: 'Ngopi & Harian', type: 'EXPENSE', iconKey: 'coffee', iconBg: '#F1F5F9', iconColor: '#475569', isDefault: false },
-  { id: 'cat-6', label: 'Gaji / Proyek', type: 'INCOME', iconKey: 'briefcase', iconBg: '#ECFDF5', iconColor: '#10B981', isDefault: true },
-  { id: 'cat-7', label: 'Bonus / Lainnya', type: 'INCOME', iconKey: 'wallet', iconBg: '#EBF2FF', iconColor: '#3B7AF5', isDefault: true },
-  { id: 'cat-8', label: 'Dividen & Cashback', type: 'INCOME', iconKey: 'wallet', iconBg: '#ECFDF5', iconColor: '#059669', isDefault: false },
-];
-
-export const INITIAL_RECURRING_SCHEDULES: RecurringScheduleItem[] = [
-  { id: 'rec-1', title: 'Bayar Kos', amount: 850_000, type: 'EXPENSE', frequency: 'Bulanan', nextDueDate: '28 Nov 2026', active: true, iconKey: 'home' },
-  { id: 'rec-2', title: 'Server Cloud', amount: 150_000, type: 'EXPENSE', frequency: 'Bulanan', nextDueDate: '25 Nov 2026', active: true, iconKey: 'cloud' },
-  { id: 'rec-3', title: 'WiFi & Kuota', amount: 120_000, type: 'EXPENSE', frequency: 'Bulanan', nextDueDate: '30 Nov 2026', active: true, iconKey: 'wifi' },
-  { id: 'rec-4', title: 'Gaji / Uang Saku', amount: 3_500_000, type: 'INCOME', frequency: 'Bulanan', nextDueDate: '01 Des 2026', active: true, iconKey: 'briefcase' },
-];
+export const INITIAL_MANAGED_CATEGORIES: ManagedCategory[] = [];
+export const INITIAL_RECURRING_SCHEDULES: RecurringScheduleItem[] = [];
 
 interface FinanceContextValue {
   userProfile: UserProfileState;
@@ -143,6 +163,14 @@ interface FinanceContextValue {
   goals: GoalItem[];
   categories: ManagedCategory[];
   recurringSchedules: RecurringScheduleItem[];
+  forecastData: BackendForecastResponse | null;
+  sawHealth: SawHealthResult | null;
+  apiNotifications: BackendNotification[];
+  unreadNotificationCount: number;
+  isLoadingData: boolean;
+  isBootstrapping: boolean;
+  isAuthenticated: boolean;
+  currentUserId: string | null;
   hasCompletedSetup: boolean;
   hasSeenTutorial: boolean;
   tutorialVisible: boolean;
@@ -159,9 +187,14 @@ interface FinanceContextValue {
   setGoals: React.Dispatch<React.SetStateAction<GoalItem[]>>;
   setCategories: React.Dispatch<React.SetStateAction<ManagedCategory[]>>;
   setRecurringSchedules: React.Dispatch<React.SetStateAction<RecurringScheduleItem[]>>;
+  refreshAllData: () => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<boolean>;
+  registerWithEmail: (name: string, email: string, password: string) => Promise<void>;
+  loginAsDemo: () => Promise<void>;
+  logoutAccount: () => Promise<void>;
   updateUserProfile: (patch: Partial<UserProfileState>) => void;
   setPendingRegistration: (name: string, email: string) => void;
-  completeAccountSetup: (payload: CompleteSetupPayload) => void;
+  completeAccountSetup: (payload: CompleteSetupPayload) => Promise<void>;
   startTutorial: () => void;
   completeTutorial: () => void;
   setTutorialVisible: React.Dispatch<React.SetStateAction<boolean>>;
@@ -171,12 +204,15 @@ interface FinanceContextValue {
   recordTransaction: (input: NewTransactionInput) => TransactionItem;
   updateTransaction: (updated: TransactionItem) => void;
   deleteTransaction: (txId: string) => void;
+  dismissAnomalyById: (id: string) => Promise<void>;
+  markNotificationRead: (id: string) => Promise<void>;
+  markAllNotificationsRead: () => Promise<void>;
   resetDemoData: () => void;
 }
 
 const DEFAULT_PROFILE: UserProfileState = {
-  name: 'Yoga Saputra',
-  email: 'yoga@smartfinance.id',
+  name: 'Pengguna FinAI',
+  email: 'user@finai.id',
   monthlyIncomeTarget: INITIAL_SUMMARY.income,
   savingsTargetPct: 20,
   focusGoal: 'Kontrol Pemborosan',
@@ -186,17 +222,23 @@ const DEFAULT_PROFILE: UserProfileState = {
   hideBalanceOnOpen: false,
 };
 
-const INITIAL_DEMO_INCOME = INITIAL_TRANSACTIONS.reduce(
-  (s, tx) => (tx.type === 'INCOME' ? s + tx.amount : s),
-  0
-);
-const INITIAL_DEMO_EXPENSE = INITIAL_TRANSACTIONS.reduce(
-  (s, tx) => (tx.type === 'EXPENSE' ? s + tx.amount : s),
-  0
-);
+function toCategoryIconKey(icon?: string | null): CategoryIconKey {
+  switch (icon) {
+    case 'utensils':
+    case 'car':
+    case 'shopping':
+    case 'zap':
+    case 'briefcase':
+    case 'coffee':
+    case 'wallet':
+      return icon;
+    default:
+      return 'wallet';
+  }
+}
 
-function mapCategoryToBudgetIconKey(key: CategoryIconKey): BudgetIconKey {
-  switch (key) {
+function toBudgetIconKey(icon?: string | null): BudgetIconKey {
+  switch (icon) {
     case 'utensils':
     case 'coffee':
       return 'utensils';
@@ -211,71 +253,360 @@ function mapCategoryToBudgetIconKey(key: CategoryIconKey): BudgetIconKey {
   }
 }
 
-function applyWalletDelta(
-  walletList: WalletItem[],
-  tx: Pick<TransactionItem, 'type' | 'amount' | 'walletId' | 'targetWalletId'>,
-  sign: 1 | -1
-): WalletItem[] {
-  return walletList.map((w) => {
-    if (tx.type === 'INCOME' && w.id === tx.walletId) {
-      return { ...w, balance: Math.max(0, w.balance + tx.amount * sign) };
-    }
-    if (tx.type === 'EXPENSE' && w.id === tx.walletId) {
-      return { ...w, balance: Math.max(0, w.balance - tx.amount * sign) };
-    }
-    if (tx.type === 'TRANSFER') {
-      if (w.id === tx.walletId) {
-        return { ...w, balance: Math.max(0, w.balance - tx.amount * sign) };
-      }
-      if (tx.targetWalletId && w.id === tx.targetWalletId) {
-        return { ...w, balance: Math.max(0, w.balance + tx.amount * sign) };
-      }
-    }
-    return w;
-  });
+function softBgFromHex(color: string): string {
+  switch (color.toUpperCase()) {
+    case '#10B981':
+    case '#059669':
+      return '#ECFDF5';
+    case '#F59E0B':
+      return '#FFFBEB';
+    case '#EF4444':
+      return '#FEF2F2';
+    case '#0D9488':
+      return '#F0FDFA';
+    case '#64748B':
+      return '#F1F5F9';
+    default:
+      return '#EBF2FF';
+  }
 }
 
-function applyBudgetDelta(
-  budgetList: BudgetItem[],
-  tx: Pick<TransactionItem, 'type' | 'amount' | 'categoryKey' | 'categoryLabel'>,
-  sign: 1 | -1
-): BudgetItem[] {
-  if (tx.type !== 'EXPENSE') return budgetList;
-  const targetIcon = mapCategoryToBudgetIconKey(tx.categoryKey);
-  const labelLower = tx.categoryLabel.toLowerCase();
+function formatDateGroupLabel(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const isToday =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
 
-  let matched = false;
-  const next = budgetList.map((b) => {
-    if (
-      !matched &&
-      (b.iconKey === targetIcon || b.name.toLowerCase().includes(labelLower))
-    ) {
-      matched = true;
-      return { ...b, spent: Math.max(0, b.spent + tx.amount * sign) };
-    }
-    return b;
+  const formatted = d.toLocaleDateString('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
   });
-  return next;
+
+  if (isToday) return `Hari Ini • ${formatted}`;
+
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+
+  if (isYesterday) return `Kemarin • ${formatted}`;
+  return formatted;
+}
+
+function mapWallet(w: BackendWallet): WalletItem {
+  const mappedType: WalletTypeKey =
+    w.type === 'EWALLET'
+      ? 'EWALLET'
+      : w.type === 'BANK'
+        ? 'BANK'
+        : w.type === 'SAVINGS'
+          ? 'SAVINGS'
+          : 'CASH';
+
+  const colorKey: WalletColorKey =
+    mappedType === 'BANK'
+      ? 'royal'
+      : mappedType === 'EWALLET'
+        ? 'teal'
+        : mappedType === 'SAVINGS'
+          ? 'navy'
+          : 'slate';
+
+  const theme = getWalletTheme(mappedType, colorKey);
+
+  return {
+    id: w.id,
+    name: w.name,
+    shortName: w.name,
+    type: mappedType,
+    balance: Number(w.currentBalance),
+    last4: w.accountNumber || '••••',
+    colorKey,
+    isArchived: w.isArchived,
+    dotColor: theme.dotColor,
+    gradient: theme.gradient,
+  };
+}
+
+function mapCategory(c: BackendCategory): ManagedCategory {
+  return {
+    id: c.id,
+    label: c.name,
+    type: c.type,
+    iconKey: toCategoryIconKey(c.icon),
+    iconBg: softBgFromHex(c.color),
+    iconColor: c.color,
+    isDefault: c.isDefault,
+    transactionCount: c.transactionCount,
+  };
+}
+
+function mapTransaction(tx: BackendTransaction): TransactionItem {
+  const d = new Date(tx.transactionDate);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const color = tx.category?.color ?? '#3B7AF5';
+
+  return {
+    id: tx.id,
+    title:
+      tx.note ||
+      tx.category?.name ||
+      (tx.type === 'TRANSFER' ? 'Transfer Antar Dompet' : 'Transaksi'),
+    categoryKey: toCategoryIconKey(tx.category?.icon),
+    categoryLabel:
+      tx.category?.name || (tx.type === 'TRANSFER' ? 'Transfer' : 'Lainnya'),
+    walletId: tx.walletId,
+    walletName: tx.wallet.name,
+    targetWalletId: tx.destinationWalletId ?? undefined,
+    targetWalletName: tx.destinationWallet?.name,
+    dateLabel: `${hh}:${mm}`,
+    dateGroup: formatDateGroupLabel(tx.transactionDate),
+    amount: Number(tx.amount),
+    type: tx.type,
+    note: tx.note ?? undefined,
+    iconBg: softBgFromHex(color),
+    iconColor: color,
+  };
+}
+
+function mapBudget(b: BackendBudget): BudgetItem {
+  return {
+    id: b.id,
+    name: b.category.name,
+    limit: Number(b.limitAmount),
+    spent: Number(b.spentAmount),
+    iconKey: toBudgetIconKey(b.category.icon),
+    alertThresholdPct: b.alertThresholdPct ?? 80,
+  };
+}
+
+function mapGoal(g: BackendGoal): GoalItem {
+  const deadline = new Date(g.deadline);
+  return {
+    id: g.id,
+    name: g.name,
+    iconKey: 'target',
+    target: Number(g.targetAmount),
+    current: Number(g.currentAmount),
+    deadline: deadline.toLocaleDateString('id-ID', {
+      month: 'short',
+      year: 'numeric',
+    }),
+    isRealized: g.status === 'COMPLETED',
+  };
+}
+
+function mapRecurring(r: BackendRecurring): RecurringScheduleItem {
+  const d = new Date(r.nextRunDate);
+  return {
+    id: r.id,
+    title: r.title,
+    amount: Number(r.amount),
+    type: r.type,
+    frequency: r.frequency === 'WEEKLY' ? 'Mingguan' : 'Bulanan',
+    nextDueDate: d.toLocaleDateString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    }),
+    active: r.isActive,
+    iconKey: r.type === 'INCOME' ? 'briefcase' : 'home',
+    walletId: r.walletId,
+    categoryId: r.categoryId,
+  };
+}
+
+function parseBudgetRule(raw?: string | null): BudgetRuleKey {
+  if (raw === '60-20-20' || raw === '60_20_20') return '60_20_20';
+  if (raw === '70-20-10' || raw === '70_20_10') return '70_20_10';
+  return '50_30_20';
+}
+
+function parseChallenge(raw?: string | null): FinancialChallengeKey {
+  if (
+    raw === 'leak_end_of_month' ||
+    raw === 'scattered_wallets' ||
+    raw === 'inconsistent_saving' ||
+    raw === 'messy_records'
+  ) {
+    return raw;
+  }
+  return 'leak_end_of_month';
+}
+
+function applyUserToProfile(user: BackendUser, prev: UserProfileState): UserProfileState {
+  const incomeTarget = user.monthlyIncomeTarget ?? prev.monthlyIncomeTarget;
+  const rule = parseBudgetRule(user.budgetRule);
+  const ruleMeta = BUDGET_RULE_META[rule];
+  return {
+    ...prev,
+    name: user.name,
+    email: user.email,
+    monthlyIncomeTarget: incomeTarget,
+    budgetRule: rule,
+    savingsTargetPct: ruleMeta.savingsPct,
+    financialChallenge: parseChallenge(user.financialChallenge),
+    safeDailyLimit: Math.round((incomeTarget * (1 - ruleMeta.savingsPct / 100)) / 30),
+  };
 }
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
 
 export function FinanceProvider({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+
   const [userProfile, setUserProfile] = useState<UserProfileState>(DEFAULT_PROFILE);
-  const [wallets, setWallets] = useState<WalletItem[]>(INITIAL_WALLETS);
-  const [budgets, setBudgets] = useState<BudgetItem[]>(mockBudgets);
-  const [transactions, setTransactions] = useState<TransactionItem[]>(INITIAL_TRANSACTIONS);
-  const [goals, setGoals] = useState<GoalItem[]>(mockGoals);
-  const [categories, setCategories] = useState<ManagedCategory[]>(INITIAL_MANAGED_CATEGORIES);
-  const [recurringSchedules, setRecurringSchedules] = useState<RecurringScheduleItem[]>(
-    INITIAL_RECURRING_SCHEDULES
-  );
+  const [wallets, setWallets] = useState<WalletItem[]>([]);
+  const [budgets, setBudgets] = useState<BudgetItem[]>([]);
+  const [transactions, setTransactions] = useState<TransactionItem[]>([]);
+  const [goals, setGoals] = useState<GoalItem[]>([]);
+  const [categories, setCategories] = useState<ManagedCategory[]>([]);
+  const [recurringSchedules, setRecurringSchedules] = useState<RecurringScheduleItem[]>([]);
+  const [forecastData, setForecastData] = useState<BackendForecastResponse | null>(null);
+  const [apiNotifications, setApiNotifications] = useState<BackendNotification[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+
+  const [isLoadingData, setIsLoadingData] = useState(false);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [hasCompletedSetup, setHasCompletedSetup] = useState(false);
   const [hasSeenTutorial, setHasSeenTutorial] = useState(true);
   const [tutorialVisible, setTutorialVisible] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
-  const [tutorialTargetRect, setTutorialTargetRect] = useState<TutorialTargetRect | null>(null);
+  const [tutorialTargetRect, setTutorialTargetRect] =
+    useState<TutorialTargetRect | null>(null);
   const [aiButtonRect, setAiButtonRect] = useState<TutorialTargetRect | null>(null);
+
+  const clearLocalState = useCallback(() => {
+    setIsAuthenticated(false);
+    setCurrentUserId(null);
+    setHasCompletedSetup(false);
+    setWallets([]);
+    setBudgets([]);
+    setTransactions([]);
+    setGoals([]);
+    setCategories([]);
+    setRecurringSchedules([]);
+    setForecastData(null);
+    setApiNotifications([]);
+    setUnreadNotificationCount(0);
+    setUserProfile(DEFAULT_PROFILE);
+  }, []);
+
+  const refreshAllData = useCallback(async () => {
+    const token = await tokenStorage.getAccessToken();
+    if (!token) {
+      setIsAuthenticated(false);
+      return;
+    }
+
+    setIsLoadingData(true);
+    try {
+      const now = new Date();
+      const month = now.getMonth() + 1;
+      const year = now.getFullYear();
+
+      const [
+        meRes,
+        walletsRes,
+        catsRes,
+        txRes,
+        budgetsRes,
+        goalsRes,
+        recurringRes,
+        notifRes,
+        forecastRes,
+      ] = await Promise.allSettled([
+        authService.getMe(),
+        walletService.getWallets(true),
+        categoryService.getCategories(),
+        transactionService.getTransactions({ limit: 50 }),
+        budgetService.getBudgets(month, year),
+        goalService.getGoals(),
+        recurringService.getRecurring(),
+        notificationService.getNotifications(),
+        aiService.getForecast(month, year),
+      ]);
+
+      if (meRes.status === 'fulfilled') {
+        setUserProfile((prev) => applyUserToProfile(meRes.value, prev));
+        setCurrentUserId(meRes.value.id);
+        setIsAuthenticated(true);
+        const completed = Boolean(meRes.value.hasCompletedSetup);
+        setHasCompletedSetup(completed);
+        await tokenStorage.setHasCompletedSetup(completed);
+      }
+
+      if (walletsRes.status === 'fulfilled') {
+        setWallets(walletsRes.value.wallets.map(mapWallet));
+      }
+
+      if (catsRes.status === 'fulfilled') {
+        setCategories(catsRes.value.map(mapCategory));
+      }
+
+      if (txRes.status === 'fulfilled') {
+        setTransactions(txRes.value.items.map(mapTransaction));
+      }
+
+      if (budgetsRes.status === 'fulfilled') {
+        setBudgets(budgetsRes.value.map(mapBudget));
+      }
+
+      if (goalsRes.status === 'fulfilled') {
+        setGoals(goalsRes.value.map(mapGoal));
+      }
+
+      if (recurringRes.status === 'fulfilled') {
+        setRecurringSchedules(recurringRes.value.map(mapRecurring));
+      }
+
+      if (notifRes.status === 'fulfilled') {
+        setApiNotifications(notifRes.value.items);
+        setUnreadNotificationCount(notifRes.value.unreadCount);
+      }
+
+      if (forecastRes.status === 'fulfilled') {
+        setForecastData(forecastRes.value);
+      }
+    } finally {
+      setIsLoadingData(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setSessionExpiredHandler(async () => {
+      clearLocalState();
+      router.replace('/login');
+    });
+
+    (async () => {
+      try {
+        const [token, setupDone] = await Promise.all([
+          tokenStorage.getAccessToken(),
+          tokenStorage.getHasCompletedSetup(),
+        ]);
+        setHasCompletedSetup(setupDone);
+        if (token) {
+          setIsAuthenticated(true);
+          await refreshAllData();
+        }
+      } finally {
+        setIsBootstrapping(false);
+      }
+    })();
+
+    return () => {
+      setSessionExpiredHandler(null);
+    };
+  }, [clearLocalState, refreshAllData, router]);
 
   const {
     monthlyIncomeActual,
@@ -298,34 +629,78 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    const incomeActual = hasCompletedSetup
-      ? txIncome
-      : Math.max(0, INITIAL_SUMMARY.income + (txIncome - INITIAL_DEMO_INCOME));
-    const expenseActual = hasCompletedSetup
-      ? txExpense
-      : Math.max(0, INITIAL_SUMMARY.expense + (txExpense - INITIAL_DEMO_EXPENSE));
-
     return {
-      monthlyIncomeActual: incomeActual,
-      monthlyExpenseActual: expenseActual,
+      monthlyIncomeActual: forecastData?.forecast.totalIncomeMtd ?? txIncome,
+      monthlyExpenseActual: forecastData?.forecast.totalExpenseMtd ?? txExpense,
       todayExpenseActual: todayExp,
       remainingDailySafeLimit: userProfile.safeDailyLimit - todayExp,
     };
-  }, [transactions, hasCompletedSetup, userProfile.safeDailyLimit]);
+  }, [transactions, forecastData, userProfile.safeDailyLimit]);
+
+  const loginWithEmail = async (email: string, password: string): Promise<boolean> => {
+    const res = await authService.login({ email, password });
+    setUserProfile((prev) => applyUserToProfile(res.user, prev));
+    setCurrentUserId(res.user.id);
+    setIsAuthenticated(true);
+    const completed = Boolean(res.user.hasCompletedSetup);
+    await tokenStorage.setHasCompletedSetup(completed);
+    setHasCompletedSetup(completed);
+    await refreshAllData();
+    return completed;
+  };
+
+  const registerWithEmail = async (name: string, email: string, password: string) => {
+    const res = await authService.register({ name, email, password });
+    setUserProfile((prev) => applyUserToProfile(res.user, prev));
+    setCurrentUserId(res.user.id);
+    setIsAuthenticated(true);
+    await tokenStorage.setHasCompletedSetup(false);
+    setHasCompletedSetup(false);
+    await refreshAllData();
+  };
+
+  const loginAsDemo = async () => {
+    await loginWithEmail('yoga@smartfinance.id', 'Password123!');
+  };
+
+  const logoutAccount = async () => {
+    const uid = currentUserId;
+    try {
+      await authService.logout();
+    } catch {
+      await tokenStorage.clearTokens();
+    }
+    if (uid) {
+      await AsyncStorage.removeItem(`setup_draft_${uid}`).catch(() => { });
+    }
+    clearLocalState();
+  };
 
   const updateUserProfile = (patch: Partial<UserProfileState>) => {
     setUserProfile((prev) => ({ ...prev, ...patch }));
+    if (isAuthenticated) {
+      void authService
+        .updateProfile({
+          ...(patch.name !== undefined ? { name: patch.name } : {}),
+          ...(patch.monthlyIncomeTarget !== undefined
+            ? { monthlyIncomeTarget: patch.monthlyIncomeTarget }
+            : {}),
+          ...(patch.financialChallenge !== undefined
+            ? { financialChallenge: patch.financialChallenge }
+            : {}),
+          ...(patch.budgetRule !== undefined
+            ? { budgetRule: patch.budgetRule }
+            : {}),
+        })
+        .catch(() => { });
+    }
   };
 
   const setPendingRegistration = (name: string, email: string) => {
-    setUserProfile((prev) => ({
-      ...prev,
-      name,
-      email,
-    }));
+    setUserProfile((prev) => ({ ...prev, name, email }));
   };
 
-  const completeAccountSetup = (payload: CompleteSetupPayload) => {
+  const completeAccountSetup = async (payload: CompleteSetupPayload) => {
     setUserProfile((prev) => ({
       ...prev,
       monthlyIncomeTarget: payload.monthlyIncomeTarget,
@@ -335,10 +710,43 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       budgetRule: payload.budgetRule,
       safeDailyLimit: payload.safeDailyLimit,
     }));
-    setWallets(payload.wallets);
-    setBudgets(payload.budgets);
-    setTransactions([]);
-    setGoals([]);
+
+    if (isAuthenticated) {
+      await authService.setupBlueprint({
+        monthlyIncomeTarget: payload.monthlyIncomeTarget,
+        financialChallenge: payload.financialChallenge,
+        budgetRule: payload.budgetRule,
+        wallets: payload.wallets.map((w) => ({
+          name: w.name,
+          type:
+            w.type === 'E_WALLET'
+              ? 'EWALLET'
+              : w.type === 'BANK'
+                ? 'BANK'
+                : w.type === 'SAVINGS'
+                  ? 'SAVINGS'
+                  : 'CASH',
+          initialBalance: w.balance,
+          color: '#3B7AF5',
+          accountNumber: w.last4 && w.last4 !== '••••' ? w.last4 : null,
+        })),
+        budgets: payload.budgets.map((b) => ({
+          categoryName: b.name,
+          limitAmount: b.limit,
+        })),
+      });
+      await refreshAllData();
+    } else {
+      setWallets(payload.wallets);
+      setBudgets(payload.budgets);
+      setTransactions([]);
+      setGoals([]);
+    }
+
+    if (currentUserId) {
+      await AsyncStorage.removeItem(`setup_draft_${currentUserId}`).catch(() => { });
+    }
+    await tokenStorage.setHasCompletedSetup(true);
     setHasCompletedSetup(true);
     setHasSeenTutorial(false);
   };
@@ -369,54 +777,105 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   };
 
   const recordTransaction = (input: NewTransactionInput): TransactionItem => {
-    const newTx: TransactionItem = {
+    const tempId = input.id || `tx-${Date.now()}`;
+    const optimistic: TransactionItem = {
       ...input,
-      id: input.id || `tx-${Date.now()}`,
+      id: tempId,
       dateGroup: input.dateGroup || TODAY_DATE_GROUP,
     };
-    setTransactions((prev) => [newTx, ...prev]);
-    setWallets((prev) => applyWalletDelta(prev, newTx, 1));
-    setBudgets((prev) => applyBudgetDelta(prev, newTx, 1));
-    return newTx;
+
+    setTransactions((prev) => [optimistic, ...prev]);
+
+    if (isAuthenticated) {
+      const matchedCategory = categories.find(
+        (c) =>
+          c.id === input.categoryId ||
+          c.label.toLowerCase() === input.categoryLabel.toLowerCase()
+      );
+
+      void transactionService
+        .createTransaction({
+          walletId: input.walletId,
+          destinationWalletId: input.targetWalletId ?? null,
+          categoryId:
+            input.type === 'TRANSFER' ? null : (matchedCategory?.id ?? null),
+          type: input.type,
+          amount: input.amount,
+          note: input.note || input.title,
+          transactionDate: new Date().toISOString(),
+        })
+        .then(() => refreshAllData())
+        .catch(() => refreshAllData());
+    }
+
+    return optimistic;
   };
 
   const updateTransaction = (updated: TransactionItem) => {
-    const existing = transactions.find((t) => t.id === updated.id);
-    if (!existing) return;
-
     setTransactions((prev) =>
       prev.map((t) => (t.id === updated.id ? updated : t))
     );
-    setWallets((prev) => {
-      const reverted = applyWalletDelta(prev, existing, -1);
-      return applyWalletDelta(reverted, updated, 1);
-    });
-    setBudgets((prev) => {
-      const reverted = applyBudgetDelta(prev, existing, -1);
-      return applyBudgetDelta(reverted, updated, 1);
-    });
+
+    if (isAuthenticated) {
+      const matchedCategory = categories.find(
+        (c) => c.label.toLowerCase() === updated.categoryLabel.toLowerCase()
+      );
+      void transactionService
+        .updateTransaction(updated.id, {
+          walletId: updated.walletId,
+          destinationWalletId: updated.targetWalletId ?? null,
+          categoryId:
+            updated.type === 'TRANSFER' ? null : (matchedCategory?.id ?? null),
+          type: updated.type,
+          amount: updated.amount,
+          note: updated.note || updated.title,
+        })
+        .then(() => refreshAllData())
+        .catch(() => refreshAllData());
+    }
   };
 
   const deleteTransaction = (txId: string) => {
-    const existing = transactions.find((t) => t.id === txId);
-    if (!existing) return;
-
     setTransactions((prev) => prev.filter((t) => t.id !== txId));
-    setWallets((prev) => applyWalletDelta(prev, existing, -1));
-    setBudgets((prev) => applyBudgetDelta(prev, existing, -1));
+    if (isAuthenticated) {
+      void transactionService
+        .deleteTransaction(txId)
+        .then(() => refreshAllData())
+        .catch(() => refreshAllData());
+    }
+  };
+
+  const dismissAnomalyById = async (id: string) => {
+    await aiService.dismissAnomaly(id);
+    setForecastData((prev) =>
+      prev
+        ? {
+          ...prev,
+          anomalies: prev.anomalies.filter((a) => a.id !== id),
+        }
+        : prev
+    );
+  };
+
+  const markNotificationRead = async (id: string) => {
+    await notificationService.markAsRead(id);
+    setApiNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
+    setUnreadNotificationCount((c) => Math.max(0, c - 1));
+  };
+
+  const markAllNotificationsRead = async () => {
+    await notificationService.markAllRead();
+    setApiNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    setUnreadNotificationCount(0);
   };
 
   const resetDemoData = () => {
-    setUserProfile(DEFAULT_PROFILE);
-    setWallets(INITIAL_WALLETS);
-    setBudgets(mockBudgets);
-    setTransactions(INITIAL_TRANSACTIONS);
-    setGoals(mockGoals);
-    setCategories(INITIAL_MANAGED_CATEGORIES);
-    setRecurringSchedules(INITIAL_RECURRING_SCHEDULES);
-    setHasCompletedSetup(false);
-    setHasSeenTutorial(true);
+    void loginAsDemo().catch(() => { });
   };
+
+  const sawHealth = forecastData?.health ?? null;
 
   return (
     <FinanceContext.Provider
@@ -428,6 +887,14 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         goals,
         categories,
         recurringSchedules,
+        forecastData,
+        sawHealth,
+        apiNotifications,
+        unreadNotificationCount,
+        isLoadingData,
+        isBootstrapping,
+        isAuthenticated,
+        currentUserId,
         hasCompletedSetup,
         hasSeenTutorial,
         tutorialVisible,
@@ -444,6 +911,11 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         setGoals,
         setCategories,
         setRecurringSchedules,
+        refreshAllData,
+        loginWithEmail,
+        registerWithEmail,
+        loginAsDemo,
+        logoutAccount,
         updateUserProfile,
         setPendingRegistration,
         completeAccountSetup,
@@ -456,6 +928,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         recordTransaction,
         updateTransaction,
         deleteTransaction,
+        dismissAnomalyById,
+        markNotificationRead,
+        markAllNotificationsRead,
         resetDemoData,
       }}
     >
@@ -467,7 +942,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 export function useFinance() {
   const ctx = useContext(FinanceContext);
   if (!ctx) {
-    throw new Error('useFinance must be used within FinanceProvider');
+    throw new Error('useFinance harus digunakan di dalam FinanceProvider');
   }
   return ctx;
 }

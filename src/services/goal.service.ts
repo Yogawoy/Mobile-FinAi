@@ -1,51 +1,76 @@
-import { apiRequest } from '@/lib/api-client';
-import type {
-  CreateGoalContributionPayload,
-  CreateGoalPayload,
-  Goal,
-  GoalContribution,
-  UpdateGoalPayload,
-  Wallet,
-} from '@/types/api';
+import { apiRequest } from '@/lib/api';
+
+export interface BackendGoal {
+  id: string;
+  userId: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  remainingAmount: number;
+  percentage: number;
+  deadline: string;
+  status: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+}
 
 export const goalService = {
   getGoals() {
-    return apiRequest<{ goals: Goal[] }>('/api/goals');
+    return apiRequest<BackendGoal[]>('/goals');
   },
 
-  getGoalById(id: string) {
-    return apiRequest<{ goal: Goal }>(`/api/goals/${id}`);
-  },
-
-  createGoal(payload: CreateGoalPayload) {
-    return apiRequest<{ goal: Goal }>('/api/goals', {
+  createGoal(payload: {
+    name: string;
+    targetAmount: number;
+    currentAmount?: number;
+    deadline: string;
+    category?: string;
+    frequency?: string;
+  }) {
+    return apiRequest<BackendGoal>('/goals', {
       method: 'POST',
+      body: {
+        name: payload.name,
+        targetAmount: payload.targetAmount,
+        currentAmount: payload.currentAmount ?? 0,
+        deadline: payload.deadline,
+      },
+    });
+  },
+
+  updateGoal(
+    id: string,
+    payload: {
+      name?: string;
+      targetAmount?: number;
+      deadline?: string;
+      status?: 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+    }
+  ) {
+    return apiRequest<BackendGoal>(`/goals/${id}`, {
+      method: 'PUT',
       body: payload,
     });
   },
 
-  updateGoal(id: string, payload: UpdateGoalPayload) {
-    return apiRequest<{ goal: Goal }>(`/api/goals/${id}`, {
+  contributeGoal(id: string, amount: number) {
+    return apiRequest<BackendGoal>(`/goals/${id}/contribute`, {
       method: 'PATCH',
-      body: payload,
+      body: { amount },
+    });
+  },
+
+  addContribution(
+    id: string,
+    payload: { amount: number; sourceWalletId?: string; contributionDate?: string }
+  ) {
+    return apiRequest<BackendGoal>(`/goals/${id}/contribute`, {
+      method: 'PATCH',
+      body: { amount: payload.amount },
     });
   },
 
   deleteGoal(id: string) {
-    return apiRequest<{ message: string }>(`/api/goals/${id}`, {
+    return apiRequest<{ deleted: boolean; goalId: string }>(`/goals/${id}`, {
       method: 'DELETE',
-    });
-  },
-
-  addContribution(goalId: string, payload: CreateGoalContributionPayload) {
-    return apiRequest<{
-      contribution: GoalContribution;
-      goal: Goal;
-      wallet: Wallet;
-      message: string;
-    }>(`/api/goals/${goalId}/contributions`, {
-      method: 'POST',
-      body: payload,
     });
   },
 };

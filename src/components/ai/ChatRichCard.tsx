@@ -1,17 +1,32 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, ShieldAlert, ShieldCheck } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AlertTriangle, Check, ShieldAlert, ShieldCheck, X } from 'lucide-react-native';
 import { formatIDR } from '@/lib/format';
 import {
   computeLiveMetrics,
   type ChatLiveContext,
   type ChatRichCardType,
 } from '@/lib/mockAiChat';
+import { type AiTransactionCardData } from '@/services/ai.service';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+
+interface ChatCategoryOption {
+  id: string;
+  label: string;
+  type: 'INCOME' | 'EXPENSE';
+}
 
 interface ChatRichCardProps {
   type: ChatRichCardType;
   live?: ChatLiveContext;
+  cardData?: AiTransactionCardData | null;
+  actionStatus?: 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+  isProcessingAction?: boolean;
+  categories?: ChatCategoryOption[];
+  onConfirmAction?: () => void;
+  onCancelAction?: () => void;
+  onSelectWallet?: (walletName: string) => void;
+  onSelectCategory?: (category: { id: string; label: string }) => void;
 }
 
 const RECOMMENDATIONS = [
@@ -50,7 +65,255 @@ function KeyValueRow({
   );
 }
 
-export function ChatRichCard({ type, live }: ChatRichCardProps) {
+export function ChatRichCard({
+  type,
+  live,
+  cardData,
+  actionStatus,
+  isProcessingAction = false,
+  categories = [],
+  onConfirmAction,
+  onCancelAction,
+  onSelectWallet,
+  onSelectCategory,
+}: ChatRichCardProps) {
+  const [pickingCategory, setPickingCategory] = useState(false);
+  if (type === 'WALLET_PICKER' && cardData?.wallets && cardData.wallets.length > 0) {
+    return (
+      <View style={styles.subCard}>
+        <View style={styles.txBadgeRow}>
+          <View style={[styles.txBadge, { backgroundColor: '#EFF6FF' }]}>
+            <Text style={[styles.txBadgeText, { color: '#2563EB' }]}>
+              Pilih Dompet ({formatIDR(cardData.amount)})
+            </Text>
+          </View>
+        </View>
+        <View style={styles.walletPickerList}>
+          {cardData.wallets.map((w) => (
+            <Pressable
+              key={w.id}
+              disabled={!w.sufficient || !onSelectWallet}
+              onPress={() => onSelectWallet?.(w.name)}
+              style={({ pressed }) => [
+                styles.walletPickerBtn,
+                !w.sufficient && styles.walletPickerBtnDisabled,
+                pressed && w.sufficient && { opacity: 0.78 },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.walletPickerName,
+                  !w.sufficient && styles.walletPickerTextDisabled,
+                ]}
+              >
+                {w.name}
+              </Text>
+              <Text
+                style={[
+                  styles.walletPickerBalance,
+                  Typography.tabularNums,
+                  !w.sufficient && styles.walletPickerTextDisabled,
+                ]}
+              >
+                {w.sufficient ? formatIDR(w.currentBalance) : `${formatIDR(w.currentBalance)} · Kurang`}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    );
+  }
+
+  if ((type === 'TRANSACTION_PREVIEW' || type === 'TRANSACTION_CREATED') && cardData) {
+    const isIncome = cardData.type === 'INCOME';
+    const isTransfer = cardData.type === 'TRANSFER';
+    const amountPrefix = isIncome ? '+' : isTransfer ? '' : '-';
+    const amountColor = isIncome
+      ? Colors.income
+      : isTransfer
+        ? Colors.primary
+        : Colors.expense;
+
+    const isConfirmed =
+      type === 'TRANSACTION_CREATED' || actionStatus === 'CONFIRMED';
+    const isCancelled = actionStatus === 'CANCELLED';
+
+    const balanceLabel = isConfirmed ? 'Saldo Terbaru' : 'Perkiraan Saldo';
+    const balanceValue = isConfirmed
+      ? cardData.newWalletBalance ?? cardData.projectedWalletBalance ?? 0
+      : cardData.projectedWalletBalance ?? cardData.currentWalletBalance ?? 0;
+
+    return (
+      <View style={styles.subCard}>
+        <View style={styles.txBadgeRow}>
+          <View
+            style={[
+              styles.txBadge,
+              {
+                backgroundColor: isCancelled
+                  ? '#F1F5F9'
+                  : isConfirmed
+                    ? '#ECFDF5'
+                    : '#EFF6FF',
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.txBadgeText,
+                {
+                  color: isCancelled
+                    ? '#64748B'
+                    : isConfirmed
+                      ? '#059669'
+                      : '#2563EB',
+                },
+              ]}
+            >
+              {isCancelled
+                ? 'Dibatalkan'
+                : isConfirmed
+                  ? '✓ Tercatat Otomatis'
+                  : 'Konfirmasi Pencatatan'}
+            </Text>
+          </View>
+        </View>
+
+        <KeyValueRow label="Catatan" value={cardData.note} />
+        <KeyValueRow
+          label="Nominal"
+          value={`${amountPrefix}${formatIDR(cardData.amount)}`}
+          valueColor={amountColor}
+        />
+        {!isCancelled &&
+        !isConfirmed &&
+        cardData.type !== 'TRANSFER' &&
+        categories.length > 0 &&
+        onSelectCategory ? (
+          <View style={styles.kvRowBorder}>
+            <Pressable
+              onPress={() => setPickingCategory((prev) => !prev)}
+              style={({ pressed }) => [
+                styles.kvRow,
+                { paddingBottom: 8 },
+                pressed && { opacity: 0.7 },
+              ]}
+            >
+              <Text style={styles.kvLabel}>Kategori</Text>
+              <View style={styles.categoryValueWrap}>
+                <Text style={[styles.kvValue, { color: Colors.textPrimary }]}>
+                  {cardData.categoryName ?? 'Lainnya'}
+                </Text>
+                <Text style={styles.categoryChangeBadge}>
+                  {pickingCategory ? 'Tutup' : 'Ubah'}
+                </Text>
+              </View>
+            </Pressable>
+            {pickingCategory ? (
+              <ScrollView
+                style={styles.categoryChipScroll}
+                contentContainerStyle={styles.categoryChipWrap}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+              >
+                {categories
+                  .filter((c) => c.type === cardData.type)
+                  .map((c) => {
+                    const active = c.id === cardData.categoryId;
+                    return (
+                      <Pressable
+                        key={c.id}
+                        onPress={() => {
+                          onSelectCategory({ id: c.id, label: c.label });
+                          setPickingCategory(false);
+                        }}
+                        style={({ pressed }) => [
+                          styles.categoryChip,
+                          active && styles.categoryChipActive,
+                          pressed && { opacity: 0.75 },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.categoryChipText,
+                            active && styles.categoryChipTextActive,
+                          ]}
+                        >
+                          {c.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+              </ScrollView>
+            ) : null}
+          </View>
+        ) : (
+          <KeyValueRow label="Kategori" value={cardData.categoryName ?? 'Lainnya'} />
+        )}
+        <KeyValueRow
+          label="Dompet"
+          value={
+            isTransfer && cardData.destinationWalletName
+              ? `${cardData.walletName ?? ''} → ${cardData.destinationWalletName}`
+              : cardData.walletName ?? '-'
+          }
+        />
+        <KeyValueRow
+          label={balanceLabel}
+          value={formatIDR(balanceValue)}
+          isLast={isCancelled}
+        />
+
+        {!isCancelled && !isConfirmed ? (
+          <View style={styles.txActionRow}>
+            <Pressable
+              onPress={onCancelAction}
+              disabled={isProcessingAction}
+              style={({ pressed }) => [
+                styles.txCancelBtn,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <X size={14} color="#64748B" strokeWidth={2.2} />
+              <Text style={styles.txCancelText}>Batal</Text>
+            </Pressable>
+            <Pressable
+              onPress={onConfirmAction}
+              disabled={isProcessingAction}
+              style={({ pressed }) => [
+                styles.txConfirmBtn,
+                pressed && { opacity: 0.85 },
+                isProcessingAction && { opacity: 0.65 },
+              ]}
+            >
+              <Check size={14} color="#FFFFFF" strokeWidth={2.4} />
+              <Text style={styles.txConfirmText}>
+                {isProcessingAction ? 'Menyimpan...' : 'Konfirmasi'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {!isCancelled && isConfirmed && cardData.transactionId && onCancelAction ? (
+          <View style={styles.txActionRow}>
+            <Pressable
+              onPress={onCancelAction}
+              disabled={isProcessingAction}
+              style={({ pressed }) => [
+                styles.txUndoBtn,
+                pressed && { opacity: 0.75 },
+              ]}
+            >
+              <Text style={styles.txUndoText}>
+                {isProcessingAction ? 'Membatalkan...' : 'Batalkan'}
+              </Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   const m = computeLiveMetrics(live);
 
   if (type === 'SUMMARY') {
@@ -317,5 +580,142 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: Radius.full,
     marginTop: 4,
+  },
+  txBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  txBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+  },
+  txBadgeText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11,
+  },
+  txActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  txCancelBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+  },
+  txCancelText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12.5,
+    color: '#475569',
+  },
+  txConfirmBtn: {
+    flex: 1.4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: Colors.primary,
+  },
+  txConfirmText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12.5,
+    color: '#FFFFFF',
+  },
+  txUndoBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FEF2F2',
+  },
+  txUndoText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+    color: Colors.expense,
+  },
+  walletPickerList: {
+    gap: 7,
+    marginTop: 2,
+  },
+  walletPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  walletPickerBtnDisabled: {
+    backgroundColor: '#F1F5F9',
+    borderColor: '#E2E8F0',
+  },
+  walletPickerName: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13,
+    color: Colors.primary,
+  },
+  walletPickerBalance: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    color: '#475569',
+  },
+  walletPickerTextDisabled: {
+    color: '#94A3B8',
+  },
+  categoryValueWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  categoryChangeBadge: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11,
+    color: Colors.primary,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: Radius.full,
+  },
+  categoryChipScroll: {
+    maxHeight: 132,
+  },
+  categoryChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    paddingBottom: 10,
+  },
+  categoryChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  categoryChipActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: Colors.primary,
+  },
+  categoryChipText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11.5,
+    color: '#475569',
+  },
+  categoryChipTextActive: {
+    fontFamily: FontFamily.semibold,
+    color: Colors.primary,
   },
 });

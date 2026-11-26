@@ -1,35 +1,82 @@
-import { apiRequest } from '@/lib/api-client';
-import type {
-  Budget,
-  CreateBudgetPayload,
-  UpdateBudgetPayload,
-} from '@/types/api';
+import { apiRequest } from '@/lib/api';
+
+export interface BackendBudget {
+  id: string;
+  userId: string;
+  categoryId: string;
+  category: {
+    id: string;
+    name: string;
+    type: 'INCOME' | 'EXPENSE';
+    icon: string;
+    color: string;
+  };
+  month: number;
+  year: number;
+  limitAmount: number;
+  spentAmount: number;
+  remainingAmount: number;
+  percentage: number;
+  alertThresholdPct: number;
+  status: 'SAFE' | 'WARNING' | 'OVER_BUDGET';
+}
 
 export const budgetService = {
   getBudgets(month?: number, year?: number) {
-    const search = new URLSearchParams();
-    if (month !== undefined) search.set('month', String(month));
-    if (year !== undefined) search.set('year', String(year));
-    const qs = search.toString();
-    return apiRequest<{ budgets: Budget[] }>(`/api/budgets${qs ? `?${qs}` : ''}`);
+    const now = new Date();
+    const m = month ?? now.getMonth() + 1;
+    const y = year ?? now.getFullYear();
+    return apiRequest<BackendBudget[]>(`/budgets?month=${m}&year=${y}`);
   },
 
-  createBudget(payload: CreateBudgetPayload) {
-    return apiRequest<{ budget: Budget }>('/api/budgets', {
+  upsertBudget(payload: {
+    categoryId: string;
+    month: number;
+    year: number;
+    limitAmount: number;
+    alertThresholdPct?: number;
+  }) {
+    return apiRequest<BackendBudget>('/budgets', {
       method: 'POST',
       body: payload,
     });
   },
 
-  updateBudget(id: string, payload: UpdateBudgetPayload) {
-    return apiRequest<{ budget: Budget }>(`/api/budgets/${id}`, {
-      method: 'PATCH',
-      body: payload,
+  createBudget(payload: {
+    category: string;
+    limitAmount: number;
+    month: number;
+    year: number;
+  }) {
+    return apiRequest<BackendBudget>('/budgets', {
+      method: 'POST',
+      body: {
+        categoryId: payload.category,
+        limitAmount: payload.limitAmount,
+        month: payload.month,
+        year: payload.year,
+      },
+    });
+  },
+
+  updateBudget(
+    _id: string,
+    payload: { category: string; limitAmount: number; month?: number; year?: number }
+  ) {
+    const now = new Date();
+    return apiRequest<BackendBudget>('/budgets', {
+      method: 'POST',
+      body: {
+        categoryId: payload.category,
+        limitAmount: payload.limitAmount,
+        month: payload.month ?? now.getMonth() + 1,
+        year: payload.year ?? now.getFullYear(),
+      },
     });
   },
 
   deleteBudget(id: string) {
-    return apiRequest<{ message: string }>(`/api/budgets/${id}`, {
+    return apiRequest<{ deleted: boolean; budgetId: string }>(`/budgets/${id}`, {
       method: 'DELETE',
     });
   },

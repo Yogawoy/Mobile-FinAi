@@ -38,7 +38,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const res = await authService.me();
-      setUser(res.user);
+      setUser({
+        id: res.user.id,
+        userId: res.user.id,
+        name: res.user.name,
+        email: res.user.email,
+        avatarUrl: null,
+        createdAt: res.user.createdAt ?? '',
+      });
     } catch {
       await clearSessionToken();
       setUser(null);
@@ -58,20 +65,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = useCallback(async (payload: LoginPayload) => {
     const res = await authService.login(payload);
-    if (!res.token) {
+    if (!res.accessToken) {
       throw new Error('Server tidak mengembalikan token sesi mobile');
     }
-    await setSessionToken(res.token);
-    setUser(res.user);
+    await setSessionToken(res.accessToken);
+    setUser({
+      id: res.user.id,
+      userId: res.user.id,
+      name: res.user.name,
+      email: res.user.email,
+      avatarUrl: null,
+      createdAt: res.user.createdAt ?? '',
+    });
   }, []);
 
   const signUp = useCallback(async (payload: RegisterPayload) => {
     const res = await authService.register(payload);
-    if (!res.token) {
+    if (!res.accessToken) {
       throw new Error('Server tidak mengembalikan token sesi mobile');
     }
-    await setSessionToken(res.token);
-    setUser(res.user);
+    await setSessionToken(res.accessToken);
+    setUser({
+      id: res.user.id,
+      userId: res.user.id,
+      name: res.user.name,
+      email: res.user.email,
+      avatarUrl: null,
+      createdAt: res.user.createdAt ?? '',
+    });
   }, []);
 
   const signOut = useCallback(async () => {

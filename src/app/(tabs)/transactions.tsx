@@ -76,6 +76,7 @@ export default function TransactionsTabScreen() {
     recordTransaction,
     updateTransaction,
     deleteTransaction,
+    refreshAllData,
   } = useFinance();
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
@@ -87,12 +88,14 @@ export default function TransactionsTabScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const { showToast } = useToast();
 
-  const handleRefresh = () => {
+  const handleRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await refreshAllData();
       showToast('Daftar transaksi diperbarui');
-    }, 450);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const filteredTransactions = useMemo(() => {

@@ -12,11 +12,16 @@ import {
   type WalletItem,
 } from '@/lib/mockData';
 
+import { type AiTransactionCardData } from '@/services/ai.service';
+
 export type ChatRichCardType =
   | 'SUMMARY'
   | 'FORECAST'
   | 'ANOMALY'
-  | 'RECOMMENDATIONS';
+  | 'RECOMMENDATIONS'
+  | 'WALLET_PICKER'
+  | 'TRANSACTION_PREVIEW'
+  | 'TRANSACTION_CREATED';
 
 export interface ChatMessage {
   id: string;
@@ -24,6 +29,8 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   richCard?: ChatRichCardType;
+  cardData?: AiTransactionCardData | null;
+  actionStatus?: 'PENDING' | 'CONFIRMED' | 'CANCELLED';
 }
 
 export interface ChatLiveContext {
@@ -39,6 +46,7 @@ export interface ChatLiveContext {
 }
 
 export const QUICK_PROMPTS = [
+  'Beli pecel lele 15rb',
   'Analisis bulan ini',
   'Cek kategori paling boros',
   'Prediksi saldo akhir bulan',

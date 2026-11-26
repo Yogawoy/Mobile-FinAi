@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -50,6 +51,11 @@ export default function ForecastScreen() {
     monthlyIncomeActual,
     monthlyExpenseActual,
     todayExpenseActual,
+    forecastData,
+    sawHealth,
+    isLoadingData,
+    refreshAllData,
+    dismissAnomalyById,
   } = useFinance();
 
   const [scenarioKey, setScenarioKey] = useState<SimulationKey>('CURRENT');
@@ -60,11 +66,52 @@ export default function ForecastScreen() {
     return sum > 0 ? sum : Math.max(userProfile.safeDailyLimit * 30, 1_000_000);
   }, [budgets, userProfile.safeDailyLimit]);
 
-  const budgetUsedPct = hasCompletedSetup
-    ? Math.min(100, Math.round((monthlyExpenseActual / totalBudgetLimit) * 100))
-    : CURRENT_BUDGET_USED_PCT;
+  const budgetUsedPct = forecastData
+    ? forecastData.pacing.budgetUsedPct
+    : hasCompletedSetup
+      ? Math.min(100, Math.round((monthlyExpenseActual / totalBudgetLimit) * 100))
+      : CURRENT_BUDGET_USED_PCT;
 
   const liveScenarios = useMemo<Record<SimulationKey, SimulationScenario>>(() => {
+    if (forecastData) {
+      const f = forecastData.forecast;
+      const baseIncome = Math.max(f.totalIncomeMtd, userProfile.monthlyIncomeTarget);
+      const remainingDays = Math.max(
+        0,
+        forecastData.pacing.totalDaysInMonth - forecastData.pacing.elapsedDays
+      );
+      const currentBurn = Math.round(f.dailyBurnRate);
+      const burn20 = Math.round(currentBurn * 0.8);
+      const burn35 = Math.round(currentBurn * 0.65);
+      const projCurrent = Math.round(f.projectedExpense);
+      const proj20 = Math.round(f.totalExpenseMtd + burn20 * remainingDays);
+      const proj35 = Math.round(f.totalExpenseMtd + burn35 * remainingDays);
+
+      return {
+        CURRENT: {
+          key: 'CURRENT',
+          label: 'Saat Ini',
+          burnRate: currentBurn,
+          projectedExpense: projCurrent,
+          projectedBalance: Math.round(f.projectedBalance),
+        },
+        SAVE_20: {
+          key: 'SAVE_20',
+          label: 'Hemat 20%',
+          burnRate: burn20,
+          projectedExpense: proj20,
+          projectedBalance: baseIncome - proj20,
+        },
+        SAVE_35: {
+          key: 'SAVE_35',
+          label: 'Hemat 35%',
+          burnRate: burn35,
+          projectedExpense: proj35,
+          projectedBalance: baseIncome - proj35,
+        },
+      };
+    }
+
     if (!hasCompletedSetup) return SIMULATION_SCENARIOS;
     const baseIncome = Math.max(monthlyIncomeActual, userProfile.monthlyIncomeTarget);
     const currentBurn =
@@ -101,6 +148,7 @@ export default function ForecastScreen() {
       },
     };
   }, [
+    forecastData,
     hasCompletedSetup,
     monthlyIncomeActual,
     monthlyExpenseActual,
@@ -110,30 +158,48 @@ export default function ForecastScreen() {
   ]);
 
   const anomalies = useMemo<AnomalyItem[]>(() => {
+    if (forecastData) {
+      return forecastData.anomalies
+        .filter((a) => !a.isDismissed && !dismissedIds.includes(a.id))
+        .map((a) => ({
+          id: a.id,
+          type: a.anomalyType,
+          badgeLabel:
+            a.anomalyType === 'OVER_BUDGET'
+              ? 'Over-Budget'
+              : a.anomalyType === 'CATEGORY_SPIKE'
+                ? `+${Math.round(a.deviationPct)}% Lonjakan`
+                : 'Outlier',
+          severity: a.severity === 'HIGH' ? ('HIGH' as const) : ('MEDIUM' as const),
+          message: a.message,
+        }));
+    }
+
     const source: AnomalyItem[] = hasCompletedSetup
       ? budgets
-          .filter((b) => b.limit > 0 && (b.spent / b.limit) * 100 >= b.alertThresholdPct)
-          .map((b) => {
-            const pct = Math.round((b.spent / b.limit) * 100);
-            const isOver = pct >= 100;
-            return {
-              id: `anom-${b.id}`,
-              type: isOver ? 'OVER_BUDGET' : 'CATEGORY_SPIKE',
-              badgeLabel: `${pct}% Terpakai`,
-              severity: isOver ? 'HIGH' : 'MEDIUM',
-              message: `Kategori ${b.name} terpakai ${formatIDR(b.spent)} dari batas ${formatIDR(b.limit)}.`,
-            };
-          })
+        .filter((b) => b.limit > 0 && (b.spent / b.limit) * 100 >= b.alertThresholdPct)
+        .map((b) => {
+          const pct = Math.round((b.spent / b.limit) * 100);
+          const isOver = pct >= 100;
+          return {
+            id: `anom-${b.id}`,
+            type: isOver ? 'OVER_BUDGET' : 'CATEGORY_SPIKE',
+            badgeLabel: `${pct}% Terpakai`,
+            severity: isOver ? 'HIGH' : 'MEDIUM',
+            message: `Kategori ${b.name} terpakai ${formatIDR(b.spent)} dari batas ${formatIDR(b.limit)}.`,
+          };
+        })
       : mockAnomalies;
 
     return source.filter((a) => !dismissedIds.includes(a.id));
-  }, [hasCompletedSetup, budgets, dismissedIds]);
+  }, [forecastData, hasCompletedSetup, budgets, dismissedIds]);
 
   const scenario = liveScenarios[scenarioKey];
   const isSpendSafe = budgetUsedPct <= TIME_ELAPSED_PCT;
 
   const handleDismiss = (item: AnomalyItem) => {
     setDismissedIds((prev) => [...prev, item.id]);
+    void dismissAnomalyById(item.id);
     showToast(`Peringatan "${item.badgeLabel}" ditandai sudah ditinjau`);
   };
 
@@ -142,6 +208,14 @@ export default function ForecastScreen() {
       <StatusBar style="light" />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoadingData}
+            onRefresh={() => void refreshAllData()}
+            tintColor="#FFFFFF"
+            colors={['#3B7AF5']}
+          />
+        }
         contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + 28 }}
       >
         {/* HEADER BIRU KOMPAK */}
@@ -283,6 +357,134 @@ export default function ForecastScreen() {
               </Text>
             </View>
           </View>
+        </Animated.View>
+
+        {/* SKOR KESEHATAN SAW (4 KRITERIA) */}
+        <Animated.View
+          entering={FadeInDown.delay(60).duration(320).easing(Easing.out(Easing.cubic))}
+          style={styles.sawCard}
+        >
+          {!sawHealth || !sawHealth.hasEnoughData || sawHealth.healthScore === null ? (
+            <View style={{ gap: 10 }}>
+              <View style={styles.sawHeaderRow}>
+                <Text style={styles.heroCaption}>SKOR KESEHATAN SAW</Text>
+                <View style={[styles.sawBadge, { backgroundColor: '#F1F5F9' }]}>
+                  <Text style={[styles.sawBadgeText, { color: '#64748B' }]}>
+                    Belum Cukup Data
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.sawEmptyTitle}>
+                {sawHealth?.txCount ?? transactions.length} dari 3 transaksi tercatat
+              </Text>
+              <View style={styles.pacingTrack}>
+                <View
+                  style={[
+                    styles.pacingFill,
+                    {
+                      width: `${Math.min(100, Math.round(((sawHealth?.txCount ?? transactions.length) / 3) * 100))}%`,
+                      backgroundColor: Colors.primary,
+                    },
+                  ]}
+                />
+              </View>
+              <Text style={styles.sawEmptyDesc}>
+                Catat minimal 3 transaksi bulan ini untuk membuka analisis Skor Kesehatan SAW 4 kriteria.
+              </Text>
+              <Pressable
+                onPress={() => router.push('/(tabs)/transactions')}
+                style={({ pressed }) => [styles.sawEmptyBtn, pressed && { opacity: 0.85 }]}
+              >
+                <Text style={styles.sawEmptyBtnText}>+ Catat Transaksi Pertama</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={{ gap: 12 }}>
+              <View style={styles.sawHeaderRow}>
+                <View>
+                  <Text style={styles.heroCaption}>SKOR KESEHATAN SAW</Text>
+                  <Text style={[styles.sawScoreBig, Typography.tabularNums]}>
+                    {sawHealth.healthScore}
+                    <Text style={styles.sawScoreUnit}>/100</Text>
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.sawBadge,
+                    {
+                      backgroundColor:
+                        sawHealth.classification === 'Strong'
+                          ? '#ECFDF5'
+                          : sawHealth.classification === 'Stable'
+                            ? '#EFF6FF'
+                            : sawHealth.classification === 'Warning'
+                              ? '#FFFBEB'
+                              : '#FEF2F2',
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.sawBadgeText,
+                      {
+                        color:
+                          sawHealth.classification === 'Strong'
+                            ? '#059669'
+                            : sawHealth.classification === 'Stable'
+                              ? '#2563EB'
+                              : sawHealth.classification === 'Warning'
+                                ? '#D97706'
+                                : '#DC2626',
+                      },
+                    ]}
+                  >
+                    {sawHealth.classification} • {sawHealth.statusLabel}
+                  </Text>
+                </View>
+              </View>
+
+              {sawHealth.criteria ? (
+                <View style={styles.sawCriteriaList}>
+                  {[
+                    sawHealth.criteria.c1SavingsRate,
+                    sawHealth.criteria.c2ExpenseControl,
+                    sawHealth.criteria.c3BudgetAdherence,
+                    sawHealth.criteria.c4LiquidityBuffer,
+                  ].map((c) => {
+                    const pct = Math.round(c.normalizedScore * 100);
+                    return (
+                      <View key={c.key} style={styles.sawCriterionRow}>
+                        <View style={styles.pacingLabelRow}>
+                          <Text style={styles.sawCritLabel}>
+                            {c.key} • {c.label} ({Math.round(c.weight * 100)}%)
+                          </Text>
+                          <Text style={[styles.sawCritVal, Typography.tabularNums]}>
+                            {pct}%
+                          </Text>
+                        </View>
+                        <View style={styles.pacingTrack}>
+                          <View
+                            style={[
+                              styles.pacingFill,
+                              {
+                                width: `${pct}%`,
+                                backgroundColor:
+                                  pct >= 75
+                                    ? Colors.income
+                                    : pct >= 50
+                                      ? Colors.primary
+                                      : Colors.warning,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+            </View>
+          )}
         </Animated.View>
 
         <View style={styles.bodyWrap}>
@@ -452,6 +654,81 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 14,
     ...CARD_SHADOW,
+  },
+  sawCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: 16,
+    ...CARD_SHADOW,
+  },
+  sawHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sawBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
+  },
+  sawBadgeText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11.5,
+  },
+  sawScoreBig: {
+    fontFamily: FontFamily.bold,
+    fontSize: 26,
+    color: Colors.textPrimary,
+    marginTop: 2,
+  },
+  sawScoreUnit: {
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.textMuted,
+  },
+  sawEmptyTitle: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  sawEmptyDesc: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: Colors.textMuted,
+  },
+  sawEmptyBtn: {
+    marginTop: 2,
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  sawEmptyBtnText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13.5,
+    color: '#FFFFFF',
+  },
+  sawCriteriaList: {
+    gap: 9,
+  },
+  sawCriterionRow: {
+    gap: 4,
+  },
+  sawCritLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  sawCritVal: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+    color: Colors.textPrimary,
   },
   heroTop: {
     flexDirection: 'row',

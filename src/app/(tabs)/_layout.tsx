@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import {
   CurvedBottomTabBar,
   type CurvedTabBarProps,
@@ -46,12 +46,19 @@ const TUTORIAL_STEPS: CoachMarkStep[] = [
 
 export default function TabsLayout() {
   const {
+    isBootstrapping,
+    isAuthenticated,
+    hasCompletedSetup,
     tutorialVisible,
     tutorialStep,
     tutorialTargetRect,
     setTutorialStep,
     completeTutorial,
   } = useFinance();
+
+  if (!isBootstrapping && isAuthenticated && !hasCompletedSetup) {
+    return <Redirect href="/setup" />;
+  }
 
   const handleNext = () => {
     if (tutorialStep >= TUTORIAL_STEPS.length - 1) {

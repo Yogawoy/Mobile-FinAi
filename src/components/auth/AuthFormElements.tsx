@@ -5,7 +5,13 @@ import {
 } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Eye, EyeOff, Play } from 'lucide-react-native';
-import React, { type ComponentRef, forwardRef, useState } from 'react';
+import React, {
+  type ComponentRef,
+  forwardRef,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -46,22 +52,28 @@ export const AuthInput = forwardRef<ComponentRef<typeof TextInput>, AuthInputPro
   ref
 ) {
   const [focused, setFocused] = useState(false);
+  const internalRef = useRef<ComponentRef<typeof TextInput>>(null);
+
+  useImperativeHandle(ref, () => internalRef.current as ComponentRef<typeof TextInput>);
 
   return (
     <View style={styles.fieldGroup}>
-      <View
+      <Pressable
+        onPress={() => internalRef.current?.focus()}
+        accessible={false}
         style={[
           styles.inputBox,
           focused && styles.inputBoxFocused,
           error ? styles.inputBoxError : undefined,
         ]}
       >
-        <View style={styles.leadingIcon}>{icon}</View>
+        <View style={styles.leadingIcon} pointerEvents="none">{icon}</View>
         <TextInput
-          ref={ref}
+          ref={internalRef}
           style={styles.input}
           placeholderTextColor="#94A3B8"
           secureTextEntry={isPassword && !showPassword}
+          {...inputProps}
           onFocus={(e) => {
             setFocused(true);
             onFocus?.(e);
@@ -70,7 +82,6 @@ export const AuthInput = forwardRef<ComponentRef<typeof TextInput>, AuthInputPro
             setFocused(false);
             onBlur?.(e);
           }}
-          {...inputProps}
         />
         {isPassword && onTogglePassword ? (
           <Pressable
@@ -80,13 +91,13 @@ export const AuthInput = forwardRef<ComponentRef<typeof TextInput>, AuthInputPro
             style={({ pressed }) => [styles.eyeBtn, pressed && { opacity: 0.65 }]}
           >
             {showPassword ? (
-              <EyeOff size={19} color="#64748B" strokeWidth={1.85} />
+              <EyeOff size={19} color="#6B7280" strokeWidth={1.85} />
             ) : (
-              <Eye size={19} color="#64748B" strokeWidth={1.85} />
+              <Eye size={19} color="#6B7280" strokeWidth={1.85} />
             )}
           </Pressable>
         ) : null}
-      </View>
+      </Pressable>
       {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
@@ -222,7 +233,13 @@ function SocialTileButton({
   );
 }
 
-export function AuthSocialRow({ onDemoPress }: { onDemoPress: () => void }) {
+export function AuthSocialRow({
+  onGooglePress,
+  onApplePress,
+}: {
+  onGooglePress: () => void;
+  onApplePress: () => void;
+}) {
   return (
     <View style={styles.socialSection}>
       <View style={styles.dividerRow}>
@@ -233,28 +250,17 @@ export function AuthSocialRow({ onDemoPress }: { onDemoPress: () => void }) {
 
       <View style={styles.socialRow}>
         <SocialTileButton
-          onPress={onDemoPress}
+          onPress={onGooglePress}
           accessibilityLabel="Lanjutkan dengan Google"
         >
           <GoogleIcon />
         </SocialTileButton>
 
         <SocialTileButton
-          onPress={onDemoPress}
+          onPress={onApplePress}
           accessibilityLabel="Lanjutkan dengan Apple"
         >
           <AppleIcon />
-        </SocialTileButton>
-
-        <SocialTileButton
-          onPress={onDemoPress}
-          accessibilityLabel="Masuk dengan Mode Demo"
-          extraStyle={styles.demoBox}
-        >
-          <Play size={16} color="#3B7AF5" fill="#3B7AF5" strokeWidth={2} />
-          <Text style={styles.demoLabel} numberOfLines={1}>
-            Demo
-          </Text>
         </SocialTileButton>
       </View>
     </View>

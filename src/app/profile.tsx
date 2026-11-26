@@ -91,8 +91,9 @@ export default function ProfileScreen() {
     userProfile,
     wallets,
     transactions,
+    sawHealth,
     updateUserProfile,
-    resetDemoData,
+    logoutAccount,
     startTutorial,
   } = useFinance();
 
@@ -245,10 +246,23 @@ export default function ProfileScreen() {
               style={[
                 styles.statNumber,
                 Typography.tabularNums,
-                { color: Colors.income },
+                {
+                  color:
+                    sawHealth?.healthScore !== null && sawHealth?.healthScore !== undefined
+                      ? sawHealth.classification === 'Strong'
+                        ? Colors.income
+                        : sawHealth.classification === 'Stable'
+                          ? Colors.primary
+                          : sawHealth.classification === 'Warning'
+                            ? '#D97706'
+                            : Colors.expense
+                      : '#64748B',
+                },
               ]}
             >
-              84/100
+              {sawHealth?.healthScore !== null && sawHealth?.healthScore !== undefined
+                ? `${sawHealth.healthScore}/100`
+                : '--/100'}
             </Text>
             <Text style={styles.statLabel}>Skor AI</Text>
           </View>
@@ -285,18 +299,6 @@ export default function ProfileScreen() {
                 iconBg="#EBF2FF"
                 title="Atur Ulang Blueprint Keuangan"
                 onPress={() => router.push('/setup')}
-                showDivider
-              />
-              <MenuRow
-                icon={<RotateCcw size={18} color="#F59E0B" strokeWidth={1.9} />}
-                iconBg="#FFFBEB"
-                title="Muat Ulang Data Demo"
-                onPress={() => {
-                  resetDemoData();
-                  showToast('Data demo berhasil dimuat ulang');
-                  router.replace('/(tabs)');
-                }}
-                showDivider
               />
             </View>
           </View>
@@ -553,8 +555,9 @@ export default function ProfileScreen() {
         variant="danger"
         icon="logout"
         onCancel={() => setLogoutConfirmOpen(false)}
-        onConfirm={() => {
+        onConfirm={async () => {
           setLogoutConfirmOpen(false);
+          await logoutAccount();
           showToast('Berhasil keluar dari akun');
           router.replace('/login');
         }}

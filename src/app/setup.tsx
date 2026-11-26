@@ -1,16 +1,25 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { useToast } from '@/components/ui/ToastProvider';
+import { WalletBrandLogo } from '@/components/ui/WalletBrandLogo';
 import {
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+  BUDGET_RULE_META,
+  FINANCIAL_CHALLENGE_META,
+  useFinance,
+  type BudgetRuleKey,
+  type FinancialChallengeKey,
+} from '@/context/FinanceContext';
+import { formatIDR } from '@/lib/format';
+import { type WalletItem } from '@/lib/mockData';
+import { useResponsive } from '@/lib/responsive';
+import {
+  getWalletTheme,
+  type WalletColorKey,
+  type WalletTypeKey,
+} from '@/lib/walletTheme';
+import { FontFamily, Typography } from '@/theme/tokens';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   ArrowLeft,
@@ -23,6 +32,19 @@ import {
   Plus,
   Receipt,
 } from 'lucide-react-native';
+import React, { type ComponentRef, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import Animated, {
   Easing,
   FadeInLeft,
@@ -33,25 +55,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
-import { useToast } from '@/components/ui/ToastProvider';
-import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
-import { WalletBrandLogo } from '@/components/ui/WalletBrandLogo';
-import {
-  BUDGET_RULE_META,
-  FINANCIAL_CHALLENGE_META,
-  type BudgetRuleKey,
-  type FinancialChallengeKey,
-  useFinance,
-} from '@/context/FinanceContext';
-import { formatIDR } from '@/lib/format';
-import { type WalletItem } from '@/lib/mockData';
-import { useResponsive } from '@/lib/responsive';
-import {
-  getWalletTheme,
-  type WalletColorKey,
-  type WalletTypeKey,
-} from '@/lib/walletTheme';
-import { FontFamily, Typography } from '@/theme/tokens';
 
 type SetupStep = 1 | 2 | 3 | 4;
 
@@ -86,27 +89,27 @@ const CHALLENGE_OPTIONS: {
   title: string;
   subtitle: string;
 }[] = [
-  {
-    key: 'leak_end_of_month',
-    title: 'Sering bocor di akhir bulan',
-    subtitle: 'Fokus kontrol laju belanja harian',
-  },
-  {
-    key: 'scattered_wallets',
-    title: 'Saldo tersebar di banyak dompet',
-    subtitle: 'Fokus konsolidasi bank & e-wallet',
-  },
-  {
-    key: 'inconsistent_saving',
-    title: 'Susah konsisten menabung',
-    subtitle: 'Fokus target tabungan otomatis',
-  },
-  {
-    key: 'messy_records',
-    title: 'Belum punya catatan rapi',
-    subtitle: 'Fokus kebiasaan catat cepat harian',
-  },
-];
+    {
+      key: 'leak_end_of_month',
+      title: 'Sering bocor di akhir bulan',
+      subtitle: 'Fokus kontrol laju belanja harian',
+    },
+    {
+      key: 'scattered_wallets',
+      title: 'Saldo tersebar di banyak dompet',
+      subtitle: 'Fokus konsolidasi bank & e-wallet',
+    },
+    {
+      key: 'inconsistent_saving',
+      title: 'Susah konsisten menabung',
+      subtitle: 'Fokus target tabungan otomatis',
+    },
+    {
+      key: 'messy_records',
+      title: 'Belum punya catatan rapi',
+      subtitle: 'Fokus kebiasaan catat cepat harian',
+    },
+  ];
 
 const INCOME_PRESETS = [
   { amount: 1_500_000, label: '1,5jt' },
@@ -121,10 +124,10 @@ const BUDGET_RULE_OPTIONS: {
   tag?: string;
   caption: string;
 }[] = [
-  { key: '50_30_20', label: '50/30/20', tag: 'Populer', caption: 'Seimbang' },
-  { key: '60_20_20', label: '60/20/20', caption: 'Kebutuhan' },
-  { key: '70_20_10', label: '70/20/10', caption: 'Ketat' },
-];
+    { key: '50_30_20', label: '50/30/20', tag: 'Populer', caption: 'Seimbang' },
+    { key: '60_20_20', label: '60/20/20', caption: 'Kebutuhan' },
+    { key: '70_20_10', label: '70/20/10', caption: 'Ketat' },
+  ];
 
 const PRESET_WALLETS: SetupWalletDraft[] = [
   {
@@ -467,12 +470,15 @@ export default function SetupWizardScreen() {
   const {
     userProfile,
     wallets,
+    currentUserId,
+    isBootstrapping,
     hasCompletedSetup,
     completeAccountSetup,
   } = useFinance();
 
   const [step, setStep] = useState<SetupStep>(1);
   const [direction, setDirection] = useState<'forward' | 'back'>('forward');
+  const draftHydratedRef = useRef(false);
 
   // Step 1 — Tantangan Keuangan
   const [challenge, setChallenge] = useState<FinancialChallengeKey>(
@@ -642,13 +648,80 @@ export default function SetupWizardScreen() {
     showToast(`${trimmed} ditambahkan`);
   };
 
+  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const customBalanceRef = useRef<ComponentRef<typeof TextInput>>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    const showEv = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEv = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const sub1 = Keyboard.addListener(showEv, () => setIsKeyboardOpen(true));
+    const sub2 = Keyboard.addListener(hideEv, () => setIsKeyboardOpen(false));
+    return () => {
+      sub1.remove();
+      sub2.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [step]);
+
+  useEffect(() => {
+    if (!currentUserId || hasCompletedSetup) return;
+    let active = true;
+    const draftKey = `setup_draft_${currentUserId}`;
+    AsyncStorage.getItem(draftKey)
+      .then((raw) => {
+        if (!active || !raw) return;
+        const parsed = JSON.parse(raw) as {
+          step?: SetupStep;
+          challenge?: FinancialChallengeKey;
+          incomeText?: string;
+          budgetRule?: BudgetRuleKey;
+          walletDrafts?: SetupWalletDraft[];
+        };
+        if (parsed.challenge) setChallenge(parsed.challenge);
+        if (parsed.incomeText !== undefined) setIncomeText(parsed.incomeText);
+        if (parsed.budgetRule) setBudgetRule(parsed.budgetRule);
+        if (Array.isArray(parsed.walletDrafts) && parsed.walletDrafts.length > 0) {
+          setWalletDrafts(parsed.walletDrafts);
+        }
+        if (parsed.step && [1, 2, 3, 4].includes(parsed.step)) {
+          setStep(parsed.step);
+        }
+        showToast('Melanjutkan pengaturan akunmu...');
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) draftHydratedRef.current = true;
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUserId, hasCompletedSetup, showToast]);
+
+  useEffect(() => {
+    if (!currentUserId || hasCompletedSetup || !draftHydratedRef.current) return;
+    const draftKey = `setup_draft_${currentUserId}`;
+    const payload = JSON.stringify({
+      step,
+      challenge,
+      incomeText,
+      budgetRule,
+      walletDrafts,
+    });
+    void AsyncStorage.setItem(draftKey, payload).catch(() => {});
+  }, [currentUserId, hasCompletedSetup, step, challenge, incomeText, budgetRule, walletDrafts]);
+
   const handleBack = () => {
     if (step === 1) return;
     setDirection('back');
     setStep((prev) => (prev - 1) as SetupStep);
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (step === 1) {
       setDirection('forward');
       setStep(2);
@@ -694,19 +767,27 @@ export default function SetupWizardScreen() {
       };
     });
 
-    completeAccountSetup({
-      monthlyIncomeTarget: incomeNum,
-      savingsTargetPct: ruleMeta.savingsPct,
-      focusGoal: FINANCIAL_CHALLENGE_META[challenge].focusLabel,
-      financialChallenge: challenge,
-      budgetRule,
-      safeDailyLimit,
-      wallets: builtWallets,
-      budgets: [],
-    });
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await completeAccountSetup({
+        monthlyIncomeTarget: incomeNum,
+        savingsTargetPct: ruleMeta.savingsPct,
+        focusGoal: FINANCIAL_CHALLENGE_META[challenge].focusLabel,
+        financialChallenge: challenge,
+        budgetRule,
+        safeDailyLimit,
+        wallets: builtWallets,
+        budgets: [],
+      });
 
-    showToast('Blueprint keuangan aktif & siap digunakan!');
-    router.replace('/(tabs)');
+      showToast('Blueprint keuangan aktif & siap digunakan!');
+      router.replace('/(tabs)');
+    } catch {
+      showToast('Gagal menyimpan blueprint ke server. Coba lagi.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const stepEntering =
@@ -716,6 +797,10 @@ export default function SetupWizardScreen() {
 
   const headerInfo = STEP_HEADERS[step];
 
+  if (!isBootstrapping && hasCompletedSetup) {
+    return <Redirect href="/(tabs)" />;
+  }
+
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
@@ -724,10 +809,12 @@ export default function SetupWizardScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={scrollRef}
+          style={[styles.flex, { overflow: 'hidden' }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           bounces={false}
-          contentContainerStyle={{ paddingBottom: 24 }}
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
         >
           {/* HEADER GRADIEN BIRU PRESISI */}
           <LinearGradient
@@ -1322,30 +1409,38 @@ export default function SetupWizardScreen() {
         </ScrollView>
 
         {/* STICKY BOTTOM ACTION BAR BERSIH */}
-        <View
-          style={[
-            styles.stickyFooter,
-            {
-              paddingHorizontal: horizontalPadding,
-              paddingBottom: Math.max(insets.bottom, 16),
-            },
-          ]}
-        >
-          <TactilePressable
-            onPress={handleNext}
-            pressedScale={0.98}
-            accessibilityRole="button"
-            accessibilityLabel={
-              step === 4 ? 'Mulai Pakai FinAI' : 'Lanjut'
-            }
-            style={styles.ctaButton}
+        {!isKeyboardOpen ? (
+          <View
+            style={[
+              styles.stickyFooter,
+              {
+                paddingHorizontal: horizontalPadding,
+                paddingBottom: Math.max(insets.bottom, 16),
+              },
+            ]}
           >
-            <Text style={styles.ctaButtonText} numberOfLines={1}>
-              {step === 4 ? 'Mulai Pakai FinAI' : 'Lanjut'}
-            </Text>
-            <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.2} />
-          </TactilePressable>
-        </View>
+            <TactilePressable
+              onPress={handleNext}
+              pressedScale={0.98}
+              accessibilityRole="button"
+              accessibilityLabel={
+                step === 4 ? 'Mulai Pakai FinAI' : 'Lanjut'
+              }
+              style={[styles.ctaButton, isSubmitting && { opacity: 0.8 }]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.ctaButtonText} numberOfLines={1}>
+                    {step === 4 ? 'Mulai Pakai FinAI' : 'Lanjut'}
+                  </Text>
+                  <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.2} />
+                </>
+              )}
+            </TactilePressable>
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
 
       {/* MINI BOTTOM SHEET: ATUR SALDO DOMPET */}
@@ -1478,6 +1573,9 @@ export default function SetupWizardScreen() {
             style={styles.customNameInput}
             placeholder="Contoh: Blu BCA, Allo Bank, Kas Kantor"
             placeholderTextColor="#94A3B8"
+            returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={() => customBalanceRef.current?.focus()}
             value={customName}
             onChangeText={setCustomName}
             autoFocus
@@ -1518,19 +1616,26 @@ export default function SetupWizardScreen() {
           </View>
 
           <Text style={styles.microLabel}>SALDO AWAL (OPSIONAL)</Text>
-          <View style={styles.walletInputWell}>
+          <Pressable
+            onPress={() => customBalanceRef.current?.focus()}
+            accessible={false}
+            style={styles.walletInputWell}
+          >
             <Text style={styles.walletInputPrefix}>Rp</Text>
             <TextInput
+              ref={customBalanceRef}
               style={[styles.walletInput, Typography.tabularNums]}
               placeholder="0"
               placeholderTextColor="#94A3B8"
               keyboardType="numeric"
+              returnKeyType="done"
+              onSubmitEditing={handleAddCustomWallet}
               value={customBalanceText}
               onChangeText={(val) =>
                 setCustomBalanceText(formatThousands(val))
               }
             />
-          </View>
+          </Pressable>
         </View>
       </BaseBottomSheet>
     </View>
@@ -1550,8 +1655,9 @@ const styles = StyleSheet.create({
   blueHeader: {
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
-    paddingBottom: 34,
+    paddingBottom: 42,
     overflow: 'hidden',
+    zIndex: 1,
   },
   headerWave: {
     position: 'absolute',
@@ -1624,10 +1730,12 @@ const styles = StyleSheet.create({
   overlapContainer: {
     marginTop: -20,
     gap: 12,
+    zIndex: 2,
   },
   overlapContainerSpacious: {
     marginTop: -20,
     gap: 14,
+    zIndex: 2,
   },
 
   /* Shared Cards */
@@ -2334,6 +2442,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E8EDF5',
     paddingTop: 12,
+    zIndex: 10,
+    elevation: 8,
   },
   ctaButton: {
     height: 50,

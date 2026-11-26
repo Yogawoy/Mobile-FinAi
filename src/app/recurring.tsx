@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { useToast } from '@/components/ui/ToastProvider';
 import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+  useFinance,
+  type RecurringFrequency,
+  type RecurringIconKey,
+  type RecurringScheduleItem,
+} from '@/context/FinanceContext';
+import { formatIDR } from '@/lib/format';
+import { recurringService } from '@/services/recurring.service';
+import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -20,18 +21,18 @@ import {
   Plus,
   Wifi,
 } from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
-import { useToast } from '@/components/ui/ToastProvider';
-import {
-  useFinance,
-  type RecurringFrequency,
-  type RecurringIconKey,
-  type RecurringScheduleItem,
-} from '@/context/FinanceContext';
-import { formatIDR } from '@/lib/format';
-import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 
 type RecurringType = 'EXPENSE' | 'INCOME';
 
@@ -86,7 +87,8 @@ export default function RecurringScreen() {
     recurringSchedules: schedules,
     setRecurringSchedules: setSchedules,
     wallets,
-    recordTransaction,
+    categories,
+    refreshAllData,
   } = useFinance();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<RecurringScheduleItem | null>(null);
@@ -126,7 +128,7 @@ export default function RecurringScreen() {
     setSheetOpen(true);
   };
 
-  const handleSaveSchedule = () => {
+  const handleSaveSchedule = async () => {
     const trimmed = title.trim();
     const numericAmount = Number(amountText.replace(/[^0-9]/g, ''));
     if (!trimmed) {
@@ -138,24 +140,44 @@ export default function RecurringScreen() {
       return;
     }
 
+    const backendFreq = frequency === 'Mingguan' ? 'WEEKLY' : 'MONTHLY';
+
     if (editingItem) {
       setSchedules((prev) =>
         prev.map((s) =>
           s.id === editingItem.id
             ? {
-                ...s,
-                title: trimmed,
-                amount: numericAmount,
-                type,
-                frequency,
-                nextDueDate: dueDate.trim() || s.nextDueDate,
-                iconKey: type === 'INCOME' ? 'briefcase' : s.iconKey,
-              }
+              ...s,
+              title: trimmed,
+              amount: numericAmount,
+              type,
+              frequency,
+              nextDueDate: dueDate.trim() || s.nextDueDate,
+              iconKey: type === 'INCOME' ? 'briefcase' : s.iconKey,
+            }
             : s
         )
       );
-      showToast('Jadwal rutin diperbarui');
+      setSheetOpen(false);
+      try {
+        await recurringService.updateRecurring(editingItem.id, {
+          title: trimmed,
+          type,
+          amount: numericAmount,
+          frequency: backendFreq,
+        });
+        await refreshAllData();
+        showToast('Jadwal rutin diperbarui');
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Gagal memperbarui jadwal', 'error');
+      }
     } else {
+      const targetWallet = wallets.find((w) => !w.isArchived) ?? wallets[0];
+      if (!targetWallet) {
+        showToast('Tambahkan dompet aktif terlebih dahulu', 'error');
+        return;
+      }
+      const matchedCat = categories.find((c) => c.type === type);
       const nextItem: RecurringScheduleItem = {
         id: `rec-${Date.now()}`,
         title: trimmed,
@@ -167,48 +189,55 @@ export default function RecurringScreen() {
         iconKey: type === 'INCOME' ? 'briefcase' : 'cloud',
       };
       setSchedules((prev) => [nextItem, ...prev]);
-      showToast(`Jadwal "${trimmed}" ditambahkan`);
+      setSheetOpen(false);
+      try {
+        await recurringService.createRecurring({
+          walletId: targetWallet.id,
+          categoryId: matchedCat?.id ?? null,
+          title: trimmed,
+          type,
+          amount: numericAmount,
+          frequency: backendFreq,
+        });
+        await refreshAllData();
+        showToast(`Jadwal "${trimmed}" ditambahkan`);
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Gagal menambah jadwal', 'error');
+      }
     }
-    setSheetOpen(false);
   };
 
-  const handleRecordNow = (item: RecurringScheduleItem) => {
+  const handleRecordNow = async (item: RecurringScheduleItem) => {
     const targetWallet = wallets.find((w) => !w.isArchived) ?? wallets[0];
     if (!targetWallet) {
       showToast('Tambahkan dompet aktif terlebih dahulu', 'error');
       return;
     }
 
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-    const isIncome = item.type === 'INCOME';
-
-    recordTransaction({
-      title: item.title,
-      categoryKey: isIncome ? 'briefcase' : 'zap',
-      categoryLabel: isIncome ? 'Gaji / Proyek' : 'Tagihan',
-      walletId: targetWallet.id,
-      walletName: targetWallet.name,
-      dateLabel: `${hh}:${mm}`,
-      amount: item.amount,
-      type: item.type,
-      iconBg: isIncome ? '#ECFDF5' : '#FEF2F2',
-      iconColor: isIncome ? '#10B981' : '#EF4444',
-    });
-
     const nextDate = advanceDateLabel(item.nextDueDate, item.frequency);
     setSchedules((prev) =>
       prev.map((s) => (s.id === item.id ? { ...s, nextDueDate: nextDate } : s))
     );
-    showToast(`${item.title} (${formatIDR(item.amount)}) tercatat ke ${targetWallet.name}`);
+    try {
+      await recurringService.executeRecurring(item.id);
+      await refreshAllData();
+      showToast(`${item.title} (${formatIDR(item.amount)}) tercatat ke ${targetWallet.name}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal mencatat transaksi rutin', 'error');
+    }
   };
 
-  const handleToggleActive = (id: string, val: boolean) => {
+  const handleToggleActive = async (id: string, val: boolean) => {
     setSchedules((prev) =>
       prev.map((s) => (s.id === id ? { ...s, active: val } : s))
     );
-    showToast(val ? 'Jadwal diaktifkan' : 'Jadwal dinonaktifkan');
+    try {
+      await recurringService.updateRecurring(id, { isActive: val });
+      await refreshAllData();
+      showToast(val ? 'Jadwal diaktifkan' : 'Jadwal dinonaktifkan');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal mengubah status jadwal', 'error');
+    }
   };
 
   return (

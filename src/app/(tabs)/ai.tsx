@@ -9,6 +9,9 @@ import {
   QUICK_PROMPTS,
   type ChatMessage,
 } from '@/lib/mockAiChat';
+import { aiService } from '@/services/ai.service';
+import { goalService } from '@/services/goal.service';
+import { transactionService } from '@/services/transaction.service';
 import { Colors, FontFamily, Radius, TouchTarget } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -99,6 +102,8 @@ export default function AiChatbotScreen() {
     todayExpenseActual,
     remainingDailySafeLimit,
     hasCompletedSetup,
+    refreshAllData,
+    categories,
   } = useFinance();
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
   const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -128,6 +133,7 @@ export default function AiChatbotScreen() {
   ]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [processingMsgId, setProcessingMsgId] = useState<string | null>(null);
   const [inputFocused, setInputFocused] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
@@ -179,7 +185,7 @@ export default function AiChatbotScreen() {
     return () => clearTimeout(timer);
   }, [messages.length, isTyping]);
 
-  const sendMessage = (rawText: string) => {
+  const sendMessage = async (rawText: string) => {
     const trimmed = rawText.trim();
     if (!trimmed || isTyping) return;
 
@@ -190,11 +196,50 @@ export default function AiChatbotScreen() {
       timestamp: formatNowTime(),
     };
 
+    const history = messages.slice(-6).map((m) => ({
+      role: (m.sender === 'USER' ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: m.text,
+    }));
+
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
     setIsTyping(true);
 
-    replyTimerRef.current = setTimeout(() => {
+    try {
+      const res = await aiService.sendAiChat({
+        message: trimmed,
+        history,
+      });
+
+      if (res.actionExecuted) {
+        void refreshAllData();
+      }
+
+      const richCard =
+        res.cardType === 'FORECAST' ||
+        res.cardType === 'ANOMALY' ||
+        res.cardType === 'WALLET_PICKER' ||
+        res.cardType === 'TRANSACTION_PREVIEW' ||
+        res.cardType === 'TRANSACTION_CREATED'
+          ? res.cardType
+          : res.cardType === 'RECOMMENDATION'
+            ? ('RECOMMENDATIONS' as const)
+            : undefined;
+      const aiMsg: ChatMessage = {
+        id: `ai-${Date.now()}`,
+        sender: 'AI',
+        text: res.reply,
+        timestamp: formatNowTime(),
+        richCard,
+        cardData: res.cardData ?? null,
+        actionStatus: res.actionExecuted
+          ? 'CONFIRMED'
+          : res.pendingConfirmation
+            ? 'PENDING'
+            : undefined,
+      };
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch {
       const reply = generateAiReply(trimmed, liveContext);
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
@@ -204,8 +249,135 @@ export default function AiChatbotScreen() {
         richCard: reply.richCard,
       };
       setMessages((prev) => [...prev, aiMsg]);
+    } finally {
       setIsTyping(false);
-    }, 800);
+    }
+  };
+
+  const handleChangeAiCategory = (
+    msgId: string,
+    category: { id: string; label: string }
+  ) => {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msgId && m.cardData
+          ? {
+              ...m,
+              cardData: {
+                ...m.cardData,
+                categoryId: category.id,
+                categoryName: category.label,
+              },
+            }
+          : m
+      )
+    );
+  };
+
+  const handleConfirmAiAction = async (msg: ChatMessage) => {
+    const data = msg.cardData;
+    if (!data || processingMsgId) return;
+    setProcessingMsgId(msg.id);
+    try {
+      if (data.intent === 'GOAL_CONTRIBUTE' && data.goalId) {
+        const updatedGoal = await goalService.contributeGoal(data.goalId, data.amount);
+        await refreshAllData();
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id
+              ? {
+                  ...m,
+                  richCard: 'TRANSACTION_CREATED',
+                  actionStatus: 'CONFIRMED',
+                  cardData: {
+                    ...data,
+                    newWalletBalance: Number(updatedGoal.currentAmount),
+                  },
+                }
+              : m
+          )
+        );
+        showToast('Setoran target tabungan berhasil dicatat');
+        return;
+      }
+
+      if (!data.walletId) {
+        showToast('Dompet tidak ditemukan', 'error');
+        return;
+      }
+
+      const created = await transactionService.createTransaction({
+        type: data.type,
+        amount: data.amount,
+        walletId: data.walletId,
+        destinationWalletId:
+          data.type === 'TRANSFER' ? data.destinationWalletId ?? null : null,
+        categoryId:
+          data.type === 'TRANSFER' ? null : data.categoryId ?? null,
+        note: data.note,
+      });
+
+      await refreshAllData();
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id
+            ? {
+                ...m,
+                richCard: 'TRANSACTION_CREATED',
+                actionStatus: 'CONFIRMED',
+                cardData: {
+                  ...data,
+                  transactionId: created.id,
+                  newWalletBalance:
+                    data.projectedWalletBalance ?? data.currentWalletBalance,
+                },
+              }
+            : m
+        )
+      );
+      showToast('Transaksi berhasil dicatat');
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : 'Gagal menyimpan transaksi',
+        'error'
+      );
+    } finally {
+      setProcessingMsgId(null);
+    }
+  };
+
+  const handleCancelAiAction = async (msg: ChatMessage) => {
+    const data = msg.cardData;
+    if (!data || processingMsgId) return;
+
+    if (msg.actionStatus === 'CONFIRMED' && data.transactionId) {
+      setProcessingMsgId(msg.id);
+      try {
+        await transactionService.deleteTransaction(data.transactionId);
+        await refreshAllData();
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id ? { ...m, actionStatus: 'CANCELLED' } : m
+          )
+        );
+        showToast('Transaksi dibatalkan');
+      } catch (err) {
+        showToast(
+          err instanceof Error ? err.message : 'Gagal membatalkan transaksi',
+          'error'
+        );
+      } finally {
+        setProcessingMsgId(null);
+      }
+      return;
+    }
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === msg.id ? { ...m, actionStatus: 'CANCELLED' } : m
+      )
+    );
+    showToast('Pencatatan dibatalkan');
   };
 
   const handleResetChat = () => {
@@ -302,7 +474,18 @@ export default function AiChatbotScreen() {
                 <View style={styles.aiBubble}>
                   <Text style={styles.aiText}>{msg.text}</Text>
                   {msg.richCard ? (
-                    <ChatRichCard type={msg.richCard} live={liveContext} />
+                    <ChatRichCard
+                      type={msg.richCard}
+                      live={liveContext}
+                      cardData={msg.cardData}
+                      actionStatus={msg.actionStatus}
+                      isProcessingAction={processingMsgId === msg.id}
+                      categories={categories}
+                      onConfirmAction={() => void handleConfirmAiAction(msg)}
+                      onCancelAction={() => void handleCancelAiAction(msg)}
+                      onSelectWallet={(walletName) => void sendMessage(walletName)}
+                      onSelectCategory={(cat) => handleChangeAiCategory(msg.id, cat)}
+                    />
                   ) : null}
                 </View>
               </Animated.View>

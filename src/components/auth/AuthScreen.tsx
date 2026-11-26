@@ -32,6 +32,7 @@ import {
 } from '@/components/auth/AuthFormElements';
 import { ForgotPasswordSheet } from '@/components/modals/ForgotPasswordSheet';
 import { useFinance } from '@/context/FinanceContext';
+import { getApiErrorMessage } from '@/lib/api';
 import { FontFamily, TouchTarget } from '@/theme/tokens';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -49,7 +50,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
   const isShortHeight = height <= 680;
-  const { setPendingRegistration, resetDemoData } = useFinance();
+  const { loginWithEmail, registerWithEmail } = useFinance();
 
   const emailRef = useRef<ComponentRef<typeof TextInput>>(null);
   const passwordRef = useRef<ComponentRef<typeof TextInput>>(null);
@@ -64,6 +65,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [forgotVisible, setForgotVisible] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [errors, setErrors] = useState<{
     name?: string;
     email?: string;
@@ -76,6 +78,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
   const switchMode = (nextMode: AuthMode) => {
     if (nextMode === mode || submitting) return;
     setErrors({});
+    setAuthError(null);
     setMode(nextMode);
   };
 
@@ -83,6 +86,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (mode === 'register') {
         setErrors({});
+        setAuthError(null);
         setMode('login');
         return true;
       }
@@ -91,8 +95,9 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
     return () => sub.remove();
   }, [mode]);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (submitting) return;
+    setAuthError(null);
     const nextErrors: typeof errors = {};
 
     if (isRegister && name.trim().length < 2) {
@@ -112,25 +117,19 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
     if (Object.keys(nextErrors).length > 0) return;
 
     setSubmitting(true);
-    setTimeout(() => {
+    try {
       if (isRegister) {
-        setPendingRegistration(name.trim(), email.trim());
+        await registerWithEmail(name.trim(), email.trim(), password);
         router.replace('/setup');
       } else {
-        resetDemoData();
-        router.replace('/(tabs)');
+        const completed = await loginWithEmail(email.trim(), password);
+        router.replace(completed ? '/(tabs)' : '/setup');
       }
-    }, 180);
-  };
-
-  const handleDemoLogin = () => {
-    if (submitting) return;
-    setErrors({});
-    setSubmitting(true);
-    setTimeout(() => {
-      resetDemoData();
-      router.replace('/(tabs)');
-    }, 140);
+    } catch (err) {
+      setAuthError(getApiErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleBack = () => {
@@ -179,14 +178,13 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
               },
             ]}
           >
-            <Animated.View layout={MORPH_LAYOUT}>
-              <Animated.View layout={MORPH_LAYOUT} style={styles.inputsStack}>
+            <View>
+              <View style={styles.inputsStack}>
                 {isRegister ? (
                   <Animated.View
                     key="name-field"
                     entering={FadeInDown.duration(280).easing(MORPH_EASING)}
                     exiting={FadeOutUp.duration(200)}
-                    layout={MORPH_LAYOUT}
                   >
                     <AuthInput
                       icon={<User size={19} color="#3B7AF5" strokeWidth={1.9} />}
@@ -206,7 +204,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
                   </Animated.View>
                 ) : null}
 
-                <Animated.View key="email-field" layout={MORPH_LAYOUT}>
+                <View key="email-field">
                   <AuthInput
                     ref={emailRef}
                     icon={<Mail size={19} color="#3B7AF5" strokeWidth={1.9} />}
@@ -225,9 +223,9 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
                     }}
                     error={errors.email}
                   />
-                </Animated.View>
+                </View>
 
-                <Animated.View key="password-field" layout={MORPH_LAYOUT}>
+                <View key="password-field">
                   <AuthInput
                     ref={passwordRef}
                     icon={<Lock size={19} color="#3B7AF5" strokeWidth={1.9} />}
@@ -252,14 +250,13 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
                     }}
                     error={errors.password}
                   />
-                </Animated.View>
+                </View>
 
                 {isRegister ? (
                   <Animated.View
                     key="confirm-field"
                     entering={FadeInDown.duration(280).easing(MORPH_EASING)}
                     exiting={FadeOutUp.duration(200)}
-                    layout={MORPH_LAYOUT}
                   >
                     <AuthInput
                       ref={confirmRef}
@@ -282,7 +279,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
                     />
                   </Animated.View>
                 ) : null}
-              </Animated.View>
+              </View>
 
               {!isRegister ? (
                 <Animated.View
@@ -307,15 +304,32 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
                 layout={MORPH_LAYOUT}
                 style={isRegister ? styles.ctaWrapRegister : undefined}
               >
+                {authError ? (
+                  <View style={styles.authErrorBanner}>
+                    <Text style={styles.authErrorText}>{authError}</Text>
+                  </View>
+                ) : null}
+
                 <AuthPrimaryButton
                   label={isRegister ? 'Daftar Sekarang' : 'Masuk'}
                   loading={submitting}
                   onPress={handleSubmit}
                 />
 
-                <AuthSocialRow onDemoPress={handleDemoLogin} />
+                <AuthSocialRow
+                  onGooglePress={() =>
+                    setAuthError(
+                      'Integrasi OAuth Google akan segera tersedia. Silakan masuk dengan email & password.'
+                    )
+                  }
+                  onApplePress={() =>
+                    setAuthError(
+                      'Integrasi Sign in with Apple akan segera tersedia. Silakan masuk dengan email & password.'
+                    )
+                  }
+                />
               </Animated.View>
-            </Animated.View>
+            </View>
 
             <Animated.View layout={MORPH_LAYOUT} style={styles.footer}>
               <Text style={styles.footerText}>
@@ -382,6 +396,21 @@ const styles = StyleSheet.create({
   },
   ctaWrapRegister: {
     marginTop: 22,
+  },
+  authErrorBanner: {
+    marginBottom: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  authErrorText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12.5,
+    color: '#DC2626',
+    textAlign: 'center',
   },
   footer: {
     flexDirection: 'row',

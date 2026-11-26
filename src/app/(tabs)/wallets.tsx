@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -21,10 +22,12 @@ import {
   WalletFormSheet,
   type WalletFormSubmitPayload,
 } from '@/components/wallets/WalletFormSheet';
+import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
 import { type WalletItem } from '@/lib/mockData';
 import { getWalletTheme } from '@/lib/walletTheme';
+import { walletService } from '@/services/wallet.service';
 import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 
 type WalletFilterKey = 'ALL' | 'BANK' | 'EWALLET' | 'SAVINGS' | 'CASH' | 'ARCHIVE';
@@ -41,12 +44,15 @@ const FILTER_TABS: { key: WalletFilterKey; label: string }[] = [
 export default function WalletsTabScreen() {
   const insets = useSafeAreaInsets();
 
+  const { showToast } = useToast();
   const {
     userProfile,
     wallets,
     setWallets,
     transactions,
     recordTransaction,
+    isLoadingData,
+    refreshAllData,
   } = useFinance();
   const [hideBalance, setHideBalance] = useState(userProfile.hideBalanceOnOpen);
 
@@ -109,13 +115,20 @@ export default function WalletsTabScreen() {
     setFormVisible(true);
   };
 
-  const handleToggleArchive = (wallet: WalletItem) => {
+  const handleToggleArchive = async (wallet: WalletItem) => {
+    const nextArchived = !wallet.isArchived;
     setWallets((prev) =>
-      prev.map((w) => (w.id === wallet.id ? { ...w, isArchived: !w.isArchived } : w))
+      prev.map((w) => (w.id === wallet.id ? { ...w, isArchived: nextArchived } : w))
     );
+    try {
+      await walletService.updateWallet(wallet.id, { isArchived: nextArchived });
+      await refreshAllData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal memperbarui status dompet', 'error');
+    }
   };
 
-  const handleWalletFormSubmit = (payload: WalletFormSubmitPayload) => {
+  const handleWalletFormSubmit = async (payload: WalletFormSubmitPayload) => {
     const theme = getWalletTheme(payload.type, payload.colorKey);
     if (payload.id) {
       setWallets((prev) =>
@@ -135,6 +148,17 @@ export default function WalletsTabScreen() {
             : w
         )
       );
+      try {
+        await walletService.updateWallet(payload.id, {
+          name: payload.name,
+          type: payload.type,
+          color: theme.dotColor,
+          accountNumber: payload.last4 || null,
+        });
+        await refreshAllData();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : 'Gagal memperbarui dompet', 'error');
+      }
       return;
     }
 
@@ -151,6 +175,18 @@ export default function WalletsTabScreen() {
       gradient: theme.gradient,
     };
     setWallets((prev) => [newWallet, ...prev]);
+    try {
+      await walletService.createWallet({
+        name: payload.name,
+        type: payload.type,
+        initialBalance: payload.balance,
+        color: theme.dotColor,
+        accountNumber: payload.last4 || null,
+      });
+      await refreshAllData();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Gagal membuat dompet', 'error');
+    }
   };
 
   const handleQuickTransferSubmit = (payload: QuickTransactionSubmitPayload) => {
@@ -197,6 +233,14 @@ export default function WalletsTabScreen() {
       <StatusBar style="light" />
       <ScrollView
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isLoadingData}
+            onRefresh={() => void refreshAllData()}
+            tintColor="#FFFFFF"
+            colors={['#3B7AF5']}
+          />
+        }
         contentContainerStyle={[
           styles.scrollContent,
           { paddingBottom: 112 + insets.bottom },
