@@ -22,7 +22,11 @@ export async function computeAndSaveForecast(
     ? Math.max(1, today.getDate())
     : totalDaysInMonth;
 
-  const [monthTransactions, budgets, health] = await Promise.all([
+  const [activeWallets, monthTransactions, budgets, health] = await Promise.all([
+    prisma.wallet.findMany({
+      where: { userId, isArchived: false },
+      select: { currentBalance: true },
+    }),
     prisma.transaction.findMany({
       where: {
         userId,
@@ -36,6 +40,11 @@ export async function computeAndSaveForecast(
     }),
     computeSawHealth(userId, month, year),
   ]);
+
+  const spendableBalance = activeWallets.reduce(
+    (sum, w) => sum + Number(w.currentBalance),
+    0
+  );
 
   let totalIncomeMtd = 0;
   let totalExpenseMtd = 0;
@@ -153,6 +162,7 @@ export async function computeAndSaveForecast(
       id: savedForecast.id,
       month: savedForecast.month,
       year: savedForecast.year,
+      spendableBalance,
       totalIncomeMtd: Number(savedForecast.totalIncomeMtd),
       totalExpenseMtd: Number(savedForecast.totalExpenseMtd),
       dailyBurnRate: Number(savedForecast.dailyBurnRate),

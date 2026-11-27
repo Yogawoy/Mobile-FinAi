@@ -1,4 +1,4 @@
-import { TransactionType } from '@prisma/client';
+import { GoalStatus, TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import {
   getDaysInMonth,
@@ -32,6 +32,7 @@ export async function getDashboardSummary(
 
   const [
     activeWallets,
+    activeGoals,
     monthTransactions,
     sixMonthTransactions,
     budgets,
@@ -40,6 +41,10 @@ export async function getDashboardSummary(
   ] = await Promise.all([
     prisma.wallet.findMany({
       where: { userId, isArchived: false },
+    }),
+    prisma.financialGoal.findMany({
+      where: { userId, status: { not: GoalStatus.CANCELLED } },
+      select: { currentAmount: true },
     }),
     prisma.transaction.findMany({
       where: {
@@ -76,10 +81,16 @@ export async function getDashboardSummary(
     computeSawHealth(userId, month, year),
   ]);
 
-  const totalBalance = activeWallets.reduce(
+  const spendableBalance = activeWallets.reduce(
     (sum, w) => sum + Number(w.currentBalance),
     0
   );
+  const totalSavingsBalance = activeGoals.reduce(
+    (sum, g) => sum + Number(g.currentAmount),
+    0
+  );
+  const totalNetWorth = spendableBalance + totalSavingsBalance;
+  const totalBalance = spendableBalance;
 
   let monthlyIncome = 0;
   let monthlyExpense = 0;
@@ -226,6 +237,9 @@ export async function getDashboardSummary(
   return {
     period: { month, year },
     totalBalance,
+    spendableBalance,
+    totalSavingsBalance,
+    totalNetWorth,
     monthlyIncome,
     monthlyExpense,
     netCashflow,

@@ -1,6 +1,7 @@
 import { Prisma, RecurringFrequency, TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
+import { assertSufficientBalance } from '../../utils/balanceGuard';
 import { AppError } from '../../utils/errors';
 import type { CreateRecurringInput, UpdateRecurringInput } from './recurring.schema';
 
@@ -192,6 +193,17 @@ export async function executeRecurring(
   const nextRunDate = advanceNextRunDate(existing.nextRunDate, existing.frequency);
 
   const result = await prisma.$transaction(async (tx) => {
+    if (existing.type === TransactionType.EXPENSE) {
+      const wallet = await tx.wallet.findUnique({
+        where: { id: existing.walletId },
+        select: { name: true, currentBalance: true },
+      });
+      if (!wallet) {
+        throw new AppError('Dompet tagihan tidak ditemukan', 404);
+      }
+      assertSufficientBalance(wallet, amount);
+    }
+
     const transaction = await tx.transaction.create({
       data: {
         userId,

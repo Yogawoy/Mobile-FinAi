@@ -1,4 +1,4 @@
-import { TransactionType } from '@prisma/client';
+import { GoalStatus, TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import {
   getDaysInMonth,
@@ -56,7 +56,7 @@ export async function computeSawHealth(
   const { start, end } = getMonthDateRangeWib(month, year);
   const daysInMonth = getDaysInMonth(month, year);
 
-  const [user, monthTransactions, activeWallets, budgets] = await Promise.all([
+  const [user, monthTransactions, activeWallets, activeGoals, budgets] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { monthlyIncomeTarget: true },
@@ -72,6 +72,10 @@ export async function computeSawHealth(
     prisma.wallet.findMany({
       where: { userId, isArchived: false },
       select: { currentBalance: true },
+    }),
+    prisma.financialGoal.findMany({
+      where: { userId, status: { not: GoalStatus.CANCELLED } },
+      select: { currentAmount: true },
     }),
     prisma.budget.findMany({
       where: { userId, month, year },
@@ -111,6 +115,11 @@ export async function computeSawHealth(
     (sum, w) => sum + Number(w.currentBalance),
     0
   );
+  const totalSavingsBalance = activeGoals.reduce(
+    (sum, g) => sum + Number(g.currentAmount),
+    0
+  );
+  const totalLiquidityBalance = totalActiveWalletBalance + totalSavingsBalance;
   const totalBudgetLimit = budgets.reduce(
     (sum, b) =>
       sum + toMonthlyEquivalent(Number(b.limitAmount), b.period, daysInMonth),
@@ -155,8 +164,9 @@ export async function computeSawHealth(
         : (1.25 - budgetRatio) / 0.4;
 
   // C4: Liquidity Buffer (Benefit, bobot 0.20, target >= 3 bulan)
+  // Menghitung Saldo Siap Pakai (dompet aktif) + Saldo Tabungan (goals aktif)
   const monthlyBaseline = Math.max(monthlyExpense, effectiveIncome * 0.5, 1);
-  const bufferMonths = totalActiveWalletBalance / monthlyBaseline;
+  const bufferMonths = totalLiquidityBalance / monthlyBaseline;
   const r4 =
     bufferMonths <= 0
       ? 0

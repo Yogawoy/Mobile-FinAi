@@ -42,6 +42,16 @@ enum GoalStatus {
   CANCELLED
 }
 
+enum GoalMutationType {
+  CONTRIBUTE
+  WITHDRAW
+}
+
+enum GoalFundFlowType {
+  WALLET
+  EXTERNAL
+}
+
 enum RiskLevel {
   SAFE
   CAUTION
@@ -99,6 +109,7 @@ model User {
   aiInsights            AiInsight[]
   notifications         Notification[]
   auditLogs             AuditLog[]
+  goalMutations         GoalMutation[]
 
   @@map("users")
 }
@@ -136,6 +147,7 @@ model Wallet {
   transactions            Transaction[]          @relation("WalletTransactions")
   incomingTransfers       Transaction[]          @relation("DestinationWalletTransactions")
   recurringTransactions   RecurringTransaction[]
+  goalMutations           GoalMutation[]
 
   @@index([userId])
   @@map("wallets")
@@ -247,10 +259,31 @@ model FinancialGoal {
   createdAt     DateTime   @default(now()) @map("created_at")
   updatedAt     DateTime   @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mutations GoalMutation[]
 
   @@index([userId])
   @@map("financial_goals")
+}
+
+model GoalMutation {
+  id         String           @id @default(uuid())
+  userId     String           @map("user_id")
+  goalId     String           @map("goal_id")
+  type       GoalMutationType
+  flowType   GoalFundFlowType @map("flow_type")
+  walletId   String?          @map("wallet_id")
+  walletName String?          @map("wallet_name")
+  amount     Decimal          @db.Decimal(15, 2)
+  note       String?
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal   FinancialGoal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  wallet Wallet?       @relation(fields: [walletId], references: [id], onDelete: SetNull)
+
+  @@index([userId, goalId])
+  @@map("goal_mutations")
 }
 
 model CashflowForecast {

@@ -7,12 +7,16 @@ import {
 } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
-import { AppError } from '../../utils/errors';
 import {
   getBudgetDateRange,
   getBudgetPeriodLabel,
   getMonthDateRangeWib as getMonthDateRange,
 } from '../../utils/budgetWindow';
+import {
+  assertSufficientBalance,
+  formatIdrPlain,
+} from '../../utils/balanceGuard';
+import { AppError } from '../../utils/errors';
 import type {
   CreateTransactionInput,
   UpdateTransactionInput,
@@ -339,13 +343,10 @@ export async function createTransaction(
         where: { id: walletId },
         select: { name: true, currentBalance: true },
       });
-      const available = Number(freshSource?.currentBalance ?? 0);
-      if (available < input.amount) {
-        throw new AppError(
-          `Saldo dompet "${freshSource?.name ?? sourceWallet.name}" tidak mencukupi (tersedia Rp ${available.toLocaleString('id-ID')}, dibutuhkan Rp ${input.amount.toLocaleString('id-ID')}).`,
-          400
-        );
+      if (!freshSource) {
+        throw new AppError('Dompet asal tidak ditemukan', 404);
       }
+      assertSufficientBalance(freshSource, input.amount);
     }
 
     const record = await tx.transaction.create({
@@ -446,6 +447,62 @@ export async function updateTransaction(
   const nextNote = input.note !== undefined ? input.note : existing.note;
 
   const updated = await prisma.$transaction(async (tx) => {
+    // 0. Simulasi perubahan saldo bersih pada seluruh dompet terdampak sebelum commit
+    const affectedIds = Array.from(
+      new Set(
+        [
+          existing.walletId,
+          existing.destinationWalletId,
+          nextWalletId,
+          nextDestWalletId,
+        ].filter((wId): wId is string => Boolean(wId))
+      )
+    );
+    const affectedWallets = await tx.wallet.findMany({
+      where: { id: { in: affectedIds }, userId },
+      select: { id: true, name: true, currentBalance: true },
+    });
+    const walletMap = new Map(affectedWallets.map((w) => [w.id, w]));
+    const deltaMap = new Map<string, number>();
+
+    const addDelta = (wId: string | null | undefined, delta: number) => {
+      if (!wId) return;
+      deltaMap.set(wId, (deltaMap.get(wId) ?? 0) + delta);
+    };
+
+    const oldAmt = Number(existing.amount);
+    if (existing.type === TransactionType.INCOME) {
+      addDelta(existing.walletId, -oldAmt);
+    } else if (existing.type === TransactionType.EXPENSE) {
+      addDelta(existing.walletId, oldAmt);
+    } else if (existing.type === TransactionType.TRANSFER) {
+      addDelta(existing.walletId, oldAmt);
+      addDelta(existing.destinationWalletId, -oldAmt);
+    }
+
+    if (nextType === TransactionType.INCOME) {
+      addDelta(nextWalletId, nextAmount);
+    } else if (nextType === TransactionType.EXPENSE) {
+      addDelta(nextWalletId, -nextAmount);
+    } else if (nextType === TransactionType.TRANSFER) {
+      addDelta(nextWalletId, -nextAmount);
+      addDelta(nextDestWalletId, nextAmount);
+    }
+
+    for (const [wId, netDelta] of deltaMap.entries()) {
+      const w = walletMap.get(wId);
+      if (!w) {
+        throw new AppError('Dompet tidak ditemukan', 404);
+      }
+      const projected = Number(w.currentBalance) + netDelta;
+      if (projected < 0) {
+        throw new AppError(
+          `Saldo ${w.name} tidak cukup untuk perubahan ini, sisa saat ini ${formatIdrPlain(Number(w.currentBalance))}`,
+          400
+        );
+      }
+    }
+
     // 1. Revert efek saldo transaksi lama
     await applyBalanceDelta(tx, {
       type: existing.type,
@@ -519,6 +576,36 @@ export async function deleteTransaction(
   }
 
   await prisma.$transaction(async (tx) => {
+    const existingAmt = Number(existing.amount);
+    if (existing.type === TransactionType.INCOME) {
+      const w = await tx.wallet.findUnique({
+        where: { id: existing.walletId },
+        select: { name: true, currentBalance: true },
+      });
+      if (w) {
+        assertSufficientBalance(
+          w,
+          existingAmt,
+          `Transaksi ini tidak bisa dihapus karena saldonya sudah terpakai di ${w.name}`
+        );
+      }
+    } else if (
+      existing.type === TransactionType.TRANSFER &&
+      existing.destinationWalletId
+    ) {
+      const destW = await tx.wallet.findUnique({
+        where: { id: existing.destinationWalletId },
+        select: { name: true, currentBalance: true },
+      });
+      if (destW) {
+        assertSufficientBalance(
+          destW,
+          existingAmt,
+          `Transaksi ini tidak bisa dihapus karena saldonya sudah terpakai di ${destW.name}`
+        );
+      }
+    }
+
     await applyBalanceDelta(tx, {
       type: existing.type,
       amount: Number(existing.amount),

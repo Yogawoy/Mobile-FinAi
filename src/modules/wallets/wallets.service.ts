@@ -57,6 +57,9 @@ export async function createWallet(
   ipAddress?: string | null
 ) {
   const balance = input.initialBalance ?? input.initial_balance ?? 0;
+  if (balance < 0) {
+    throw new AppError('Saldo awal dompet tidak boleh kurang dari Rp 0', 400);
+  }
   const accountNumber = input.accountNumber ?? input.account_number ?? null;
 
   const wallet = await prisma.wallet.create({

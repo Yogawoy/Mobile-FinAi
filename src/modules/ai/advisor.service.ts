@@ -1,4 +1,4 @@
-import { Prisma, TransactionType } from '@prisma/client';
+import { GoalStatus, Prisma, TransactionType } from '@prisma/client';
 import { callGemini } from '../../config/gemini';
 import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
@@ -59,7 +59,7 @@ export async function generateAdvisorInsight(
 ) {
   const { start, end } = getMonthDateRange(month, year);
 
-  const [forecastData, budgets, expenseByCategory, sawHealth] = await Promise.all([
+  const [forecastData, budgets, expenseByCategory, sawHealth, activeGoals, recentGoalMutations] = await Promise.all([
     computeAndSaveForecast(userId, month, year),
     listBudgets(userId, month, year),
     prisma.transaction.findMany({
@@ -71,6 +71,16 @@ export async function generateAdvisorInsight(
       include: { category: true },
     }),
     computeSawHealth(userId, month, year),
+    prisma.financialGoal.findMany({
+      where: { userId, status: { not: GoalStatus.CANCELLED } },
+      select: { name: true, currentAmount: true, targetAmount: true },
+    }),
+    prisma.goalMutation.findMany({
+      where: { userId, createdAt: { gte: start, lt: end } },
+      orderBy: { createdAt: 'desc' },
+      take: 5,
+      select: { type: true, flowType: true, amount: true },
+    }),
   ]);
 
   const catTotals = new Map<string, number>();
@@ -83,6 +93,11 @@ export async function generateAdvisorInsight(
     .slice(0, 4)
     .map(([name, amount]) => ({ name, amount }));
 
+  const totalSavingsBalance = activeGoals.reduce(
+    (sum, g) => sum + Number(g.currentAmount),
+    0
+  );
+
   // Zero PII: hanya angka & nama kategori
   const inputSnapshot = {
     period: { month, year },
@@ -93,6 +108,15 @@ export async function generateAdvisorInsight(
       projectedExpense: forecastData.forecast.projectedExpense,
       projectedBalance: forecastData.forecast.projectedBalance,
       riskLevel: forecastData.forecast.riskLevel,
+    },
+    savingsSummary: {
+      totalSavingsBalance,
+      activeGoalsCount: activeGoals.length,
+      recentSavingsActivity: recentGoalMutations.map((m) => ({
+        type: m.type,
+        flowType: m.flowType,
+        amount: Number(m.amount),
+      })),
     },
     pacing: forecastData.pacing,
     sawHealth,

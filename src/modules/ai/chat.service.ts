@@ -71,6 +71,7 @@ const actionPayloadSchema = z.object({
   note: z.string().trim().max(255).optional().default(''),
   walletId: z.string().trim().optional().nullable(),
   destinationWalletId: z.string().trim().optional().nullable(),
+  sourceType: z.enum(['WALLET', 'EXTERNAL']).optional().nullable(),
   categoryId: z.string().trim().optional().nullable(),
   goalId: z.string().trim().optional().nullable(),
 });
@@ -305,7 +306,8 @@ function parseDeterministicIntent(
 
   const lower = effectiveMessage.toLowerCase().trim();
   const isTransfer = /\b(transfer|pindah saldo|kirim ke)\b/i.test(lower);
-  const isGoal = /\b(nabung|tabung|target|goal)\b/i.test(lower);
+  const isGoal = /\b(nabung|tabung|tabungan|sisihkan|target|goal)\b/i.test(lower) ||
+    /\b(setor|masukin)\b.*\b(tabungan|target|goal|dana darurat)\b/i.test(lower);
   const isIncome = /\b(gaji|gajian|terima|dapat|masuk|bonus|thr|pemasukan|freelance|jualan|omzet|dividen|cashback|refund|honor)\b/i.test(lower);
   const isExpense = /\b(beli|bayar|makan|minum|ngopi|naik|parkir|ojek|belanja|jajan|isi|topup|keluar|sedekah|infaq|zakat|donasi|servis|ganti oli|cuci|laundry|potong rambut|salon|langganan|perpanjang|sewa|cicilan|angsuran|kirim|kasih|traktir|nonton|tiket|grooming)\b/i.test(lower);
 
@@ -356,7 +358,7 @@ function parseDeterministicIntent(
       intent: 'GOAL_CONTRIBUTE',
       reply: `Saya siap menyetor Rp ${amount.toLocaleString('id-ID')} ke target "${goal.name}". Tekan Konfirmasi untuk menyimpan.`,
       actionPayload: {
-        type: 'EXPENSE',
+        type: 'TRANSFER',
         amount,
         note: `Setor ${goal.name}`,
         walletId: mentionedWallets[0]?.id ?? null,
@@ -500,6 +502,10 @@ export async function chatWithFinAi(params: {
   }));
 
   const totalBalance = wallets.reduce((s, w) => s + w.currentBalance, 0);
+  const totalSavingsBalance = goals.reduce(
+    (s, g) => s + Number(g.currentAmount),
+    0
+  );
 
   // Deteksi permintaan hapus target tabungan (HITL)
   const lowerForDelete = message.toLowerCase();
@@ -872,6 +878,9 @@ export async function chatWithFinAi(params: {
 
   const financialContext = {
     periode: `${month}/${year}`,
+    saldoSiapPakai: totalBalance,
+    totalTabungan: totalSavingsBalance,
+    totalKekayaanBersih: totalBalance + totalSavingsBalance,
     totalSaldoDompetAktif: totalBalance,
     daftarDompet: wallets,
     daftarKategori: categories,
@@ -1229,19 +1238,27 @@ export async function chatWithFinAi(params: {
         };
       }
 
-      const mentionedGoalWallets = findMentionedWallets(message, wallets);
-      const srcWallet =
-        mentionedGoalWallets[0] ??
-        wallets.find((w) => w.id === parsedAction?.walletId);
-      const destWallet =
-        mentionedGoalWallets[1] ??
-        wallets.find(
-          (w) =>
-            w.id === parsedAction?.destinationWalletId &&
-            w.id !== srcWallet?.id
+      const isExternalSource =
+        parsedAction?.sourceType === 'EXTERNAL' ||
+        /(dari\s+)?(dana\s+luar|uang\s+luar|celengan|luar\s+dompet|tunai\s+luar)/i.test(
+          lowerMsg
         );
 
-      if (!srcWallet && wallets.length > 0) {
+      const mentionedGoalWallets = findMentionedWallets(message, wallets);
+      const srcWallet = isExternalSource
+        ? undefined
+        : mentionedGoalWallets[0] ??
+          wallets.find((w) => w.id === parsedAction?.walletId);
+      const destWallet = isExternalSource
+        ? undefined
+        : mentionedGoalWallets[1] ??
+          wallets.find(
+            (w) =>
+              w.id === parsedAction?.destinationWalletId &&
+              w.id !== srcWallet?.id
+          );
+
+      if (!isExternalSource && !srcWallet && wallets.length > 0) {
         return {
           reply: `Mau ambil uang dari dompet mana untuk setor Rp ${amount.toLocaleString('id-ID')} ke target "${goal.name}"?`,
           intent,
@@ -1251,7 +1268,7 @@ export async function chatWithFinAi(params: {
           cardData: {
             intent,
             goalId: goal.id,
-            type: 'EXPENSE',
+            type: 'TRANSFER',
             amount,
             note: `Setor ${goal.name}`,
             wallets: wallets.map((w) => ({
@@ -1270,7 +1287,7 @@ export async function chatWithFinAi(params: {
           (w) => w.id !== srcWallet.id && w.currentBalance >= amount
         );
         return {
-          reply: `Saldo dompet "${srcWallet.name}" belum cukup (tersedia Rp ${srcWallet.currentBalance.toLocaleString('id-ID')}, butuh Rp ${amount.toLocaleString('id-ID')}).${alternatives.length > 0 ? ' Pilih dompet lain di bawah:' : ''}`,
+          reply: `Saldo ${srcWallet.name} kamu tidak cukup untuk transaksi ini, sisa saat ini Rp ${srcWallet.currentBalance.toLocaleString('id-ID')}. Kamu bisa pilih dompet lain atau catat pemasukan dulu.`,
           intent,
           actionExecuted: false,
           pendingConfirmation: false,
@@ -1280,7 +1297,7 @@ export async function chatWithFinAi(params: {
               ? {
                   intent,
                   goalId: goal.id,
-                  type: 'EXPENSE',
+                  type: 'TRANSFER',
                   amount,
                   note: `Setor ${goal.name}`,
                   wallets: wallets.map((w) => ({
@@ -1295,7 +1312,7 @@ export async function chatWithFinAi(params: {
         };
       }
 
-      const txTypeForGoal: 'TRANSFER' | 'EXPENSE' = destWallet ? 'TRANSFER' : 'EXPENSE';
+      const txTypeForGoal: 'TRANSFER' = 'TRANSFER';
 
       if (executeImmediately) {
         const updatedGoal = await contributeGoal(
@@ -1303,7 +1320,8 @@ export async function chatWithFinAi(params: {
           goal.id,
           {
             amount,
-            walletId: srcWallet?.id ?? null,
+            sourceType: isExternalSource ? 'EXTERNAL' : 'WALLET',
+            walletId: isExternalSource ? null : (srcWallet?.id ?? null),
             destinationWalletId: destWallet?.id ?? null,
             note: `Setor ${goal.name}`,
           },
@@ -1314,11 +1332,17 @@ export async function chatWithFinAi(params: {
           action: 'AI_AUTO_RECORD',
           entityType: 'GOAL',
           entityId: goal.id,
-          metadata: { amount, walletId: srcWallet?.id, destinationWalletId: destWallet?.id, via: 'AI_CHAT' },
+          metadata: {
+            amount,
+            sourceType: isExternalSource ? 'EXTERNAL' : 'WALLET',
+            walletId: isExternalSource ? null : srcWallet?.id,
+            destinationWalletId: destWallet?.id,
+            via: 'AI_CHAT',
+          },
           ipAddress,
         });
         return {
-          reply: `Beres! Setoran Rp ${amount.toLocaleString('id-ID')} ke target "${goal.name}" sudah dicatat${srcWallet ? ` dari ${srcWallet.name}` : ''}.`,
+          reply: `Beres! Setoran Rp ${amount.toLocaleString('id-ID')} ke target "${goal.name}" sudah dicatat${isExternalSource ? ' dari dana luar' : srcWallet ? ` dari ${srcWallet.name}` : ''}.`,
           intent,
           actionExecuted: true,
           pendingConfirmation: false,
@@ -1326,16 +1350,18 @@ export async function chatWithFinAi(params: {
           cardData: {
             goalId: goal.id,
             type: txTypeForGoal,
+            sourceType: isExternalSource ? 'EXTERNAL' : 'WALLET',
             amount,
             note: `Setor ${goal.name}`,
             categoryName: 'Target Tabungan',
-            walletId: srcWallet?.id,
-            walletName: srcWallet?.name ?? goal.name,
+            walletId: isExternalSource ? null : srcWallet?.id,
+            walletName: isExternalSource ? 'Dana Luar' : (srcWallet?.name ?? goal.name),
             destinationWalletId: destWallet?.id ?? null,
             destinationWalletName: destWallet?.name ?? null,
-            newWalletBalance: srcWallet
-              ? Math.max(0, srcWallet.currentBalance - amount)
-              : Number(updatedGoal.currentAmount),
+            newWalletBalance:
+              !isExternalSource && srcWallet
+                ? Math.max(0, srcWallet.currentBalance - amount)
+                : Number(updatedGoal.currentAmount),
           },
         };
       }
@@ -1343,7 +1369,7 @@ export async function chatWithFinAi(params: {
       return {
         reply:
           reply ||
-          `Siap menyetor Rp ${amount.toLocaleString('id-ID')} ke target "${goal.name}"${srcWallet ? ` dari ${srcWallet.name}` : ''}${destWallet ? ` ke ${destWallet.name}` : ''}. Tekan Konfirmasi untuk menyimpan.`,
+          `Siap menyetor Rp ${amount.toLocaleString('id-ID')} ke target "${goal.name}"${isExternalSource ? ' dari dana luar' : srcWallet ? ` dari ${srcWallet.name}` : ''}. Tekan Konfirmasi untuk menyimpan.`,
         intent,
         actionExecuted: false,
         pendingConfirmation: true,
@@ -1352,17 +1378,22 @@ export async function chatWithFinAi(params: {
           intent,
           goalId: goal.id,
           type: txTypeForGoal,
+          sourceType: isExternalSource ? 'EXTERNAL' : 'WALLET',
           amount,
           note: `Setor ${goal.name}`,
           categoryName: 'Target Tabungan',
-          walletId: srcWallet?.id,
-          walletName: srcWallet?.name ?? goal.name,
+          walletId: isExternalSource ? null : srcWallet?.id,
+          walletName: isExternalSource ? 'Dana Luar' : (srcWallet?.name ?? goal.name),
           destinationWalletId: destWallet?.id ?? null,
           destinationWalletName: destWallet?.name ?? null,
-          currentWalletBalance: srcWallet?.currentBalance ?? Number(goal.currentAmount),
-          projectedWalletBalance: srcWallet
-            ? Math.max(0, srcWallet.currentBalance - amount)
-            : Number(goal.currentAmount) + amount,
+          currentWalletBalance:
+            !isExternalSource && srcWallet
+              ? srcWallet.currentBalance
+              : Number(goal.currentAmount),
+          projectedWalletBalance:
+            !isExternalSource && srcWallet
+              ? Math.max(0, srcWallet.currentBalance - amount)
+              : Number(goal.currentAmount) + amount,
         },
       };
     }
@@ -1511,6 +1542,37 @@ export async function chatWithFinAi(params: {
       txType === 'INCOME'
         ? wallet.currentBalance + amount
         : wallet.currentBalance - amount;
+
+    if (txType !== 'INCOME' && wallet.currentBalance < amount) {
+      const alternatives = wallets.filter(
+        (w) => w.id !== wallet.id && w.currentBalance >= amount
+      );
+      return {
+        reply: `Saldo ${wallet.name} kamu tidak cukup untuk transaksi ini, sisa saat ini Rp ${wallet.currentBalance.toLocaleString('id-ID')}. Kamu bisa pilih dompet lain atau catat pemasukan dulu.`,
+        intent,
+        actionExecuted: false,
+        pendingConfirmation: false,
+        cardType: alternatives.length > 0 ? 'WALLET_PICKER' : null,
+        cardData:
+          alternatives.length > 0
+            ? {
+                intent,
+                type: txType,
+                amount,
+                note,
+                categoryId: category?.id ?? null,
+                destinationWalletId: destWallet?.id ?? null,
+                wallets: wallets.map((w) => ({
+                  id: w.id,
+                  name: w.name,
+                  type: w.type,
+                  currentBalance: w.currentBalance,
+                  sufficient: w.currentBalance >= amount,
+                })),
+              }
+            : null,
+      };
+    }
 
     if (executeImmediately) {
       const created = await createTransaction(
