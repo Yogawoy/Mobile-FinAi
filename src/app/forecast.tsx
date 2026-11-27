@@ -252,7 +252,7 @@ export default function ForecastScreen() {
         >
           <View style={styles.heroTop}>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.heroCaption}>ESTIMASI SALDO AKHIR BULAN</Text>
+              <Text style={styles.heroCaption}>PERKIRAAN SISA UANG AKHIR BULAN</Text>
               <Text
                 style={[styles.heroAmount, Typography.tabularNums]}
                 numberOfLines={1}
@@ -276,7 +276,7 @@ export default function ForecastScreen() {
                   scenario.projectedBalance < 0 && { color: Colors.expenseText },
                 ]}
               >
-                {scenario.projectedBalance >= 0 ? 'Surplus Aman' : 'Perlu Kontrol'}
+                {scenario.projectedBalance >= 0 ? 'Uang Masih Aman' : 'Perlu Kontrol'}
               </Text>
             </View>
           </View>
@@ -330,7 +330,7 @@ export default function ForecastScreen() {
           {/* 2 Mini-Tiles Dinamis */}
           <View style={styles.subMetricsRow}>
             <View style={styles.subMetricBox}>
-              <Text style={styles.subMetricLabel}>Burn Rate / Hari</Text>
+              <Text style={styles.subMetricLabel}>Rata-rata Belanja / Hari</Text>
               <Text
                 style={[styles.subMetricVal, Typography.tabularNums]}
                 numberOfLines={1}
@@ -343,7 +343,7 @@ export default function ForecastScreen() {
               <Text style={styles.subMetricLabel}>
                 {hasCompletedSetup
                   ? `Batas Aman (${BUDGET_RULE_META[userProfile.budgetRule].label})`
-                  : 'Proyeksi Keluar'}
+                  : 'Perkiraan Pengeluaran'}
               </Text>
               <Text
                 style={[styles.subMetricVal, Typography.tabularNums]}
@@ -438,7 +438,7 @@ export default function ForecastScreen() {
                       },
                     ]}
                   >
-                    {sawHealth.classification} • {sawHealth.statusLabel}
+                    {sawHealth.statusLabel}
                   </Text>
                 </View>
               </View>
@@ -456,7 +456,7 @@ export default function ForecastScreen() {
                       <View key={c.key} style={styles.sawCriterionRow}>
                         <View style={styles.pacingLabelRow}>
                           <Text style={styles.sawCritLabel}>
-                            {c.key} • {c.label} ({Math.round(c.weight * 100)}%)
+                            {c.label} ({Math.round(c.weight * 100)}%)
                           </Text>
                           <Text style={[styles.sawCritVal, Typography.tabularNums]}>
                             {pct}%
@@ -533,10 +533,10 @@ export default function ForecastScreen() {
                 const accent = isHigh ? Colors.expense : Colors.warning;
                 const shortTitle =
                   item.type === 'OVER_BUDGET'
-                    ? 'Belanja • 108% Batas'
+                    ? 'Belanja 108% Batas'
                     : item.type === 'CATEGORY_SPIKE'
-                      ? 'Makanan • Lonjakan +28%'
-                      : 'Belanja Mingguan • Outlier';
+                      ? 'Makanan +28%'
+                      : 'Belanja Mingguan Tinggi';
 
                 return (
                   <Animated.View

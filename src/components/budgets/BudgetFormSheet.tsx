@@ -1,6 +1,3 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Trash2 } from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -8,8 +5,12 @@ import {
   BUDGET_CATEGORY_OPTIONS,
   type BudgetIconKey,
   type BudgetItem,
+  type BudgetPeriod,
 } from '@/lib/mockData';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+import { Trash2 } from 'lucide-react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 export interface BudgetFormSubmitPayload {
   id?: string;
@@ -17,7 +18,14 @@ export interface BudgetFormSubmitPayload {
   iconKey: BudgetIconKey;
   limit: number;
   alertThresholdPct: number;
+  period: BudgetPeriod;
 }
+
+const PERIOD_OPTIONS: Array<{ key: BudgetPeriod; label: string }> = [
+  { key: 'DAILY', label: 'Harian' },
+  { key: 'WEEKLY', label: 'Mingguan' },
+  { key: 'MONTHLY', label: 'Bulanan' },
+];
 
 interface BudgetFormSheetProps {
   visible: boolean;
@@ -46,6 +54,7 @@ export function BudgetFormSheet({
   const [selectedIconKey, setSelectedIconKey] = useState<BudgetIconKey>('utensils');
   const [name, setName] = useState('Makanan & Minuman');
   const [limitText, setLimitText] = useState('');
+  const [period, setPeriod] = useState<BudgetPeriod>('MONTHLY');
   const [thresholdPct, setThresholdPct] = useState(80);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
@@ -55,6 +64,7 @@ export function BudgetFormSheet({
       setSelectedIconKey(editingBudget.iconKey);
       setName(editingBudget.name);
       setLimitText(formatThousands(String(editingBudget.limit)));
+      setPeriod(editingBudget.period ?? 'MONTHLY');
       setThresholdPct(editingBudget.alertThresholdPct);
       return;
     }
@@ -62,6 +72,7 @@ export function BudgetFormSheet({
     setSelectedIconKey('utensils');
     setName('Makanan & Minuman');
     setLimitText('');
+    setPeriod('MONTHLY');
     setThresholdPct(80);
   }, [visible, editingBudget]);
 
@@ -83,6 +94,7 @@ export function BudgetFormSheet({
       iconKey: selectedIconKey,
       limit: numericLimit,
       alertThresholdPct: thresholdPct,
+      period,
     });
     showToast(
       editingBudget ? 'Anggaran diperbarui' : 'Anggaran baru ditambahkan'
@@ -141,7 +153,31 @@ export function BudgetFormSheet({
           })}
         </View>
 
-        <Text style={styles.label}>Batas Anggaran Bulanan (Rp)</Text>
+        <Text style={styles.label}>Periode Anggaran</Text>
+        <View style={styles.thresholdRow}>
+          {PERIOD_OPTIONS.map((opt) => {
+            const selected = period === opt.key;
+            return (
+              <Pressable
+                key={opt.key}
+                onPress={() => setPeriod(opt.key)}
+                style={[styles.thresholdChip, selected && styles.chipSelected]}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                  {opt.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <Text style={styles.label}>
+          {period === 'DAILY'
+            ? 'Batas Pengeluaran per Hari (Rp)'
+            : period === 'WEEKLY'
+              ? 'Batas Pengeluaran per Minggu (Rp)'
+              : 'Batas Pengeluaran per Bulan (Rp)'}
+        </Text>
         <View style={styles.amountBox}>
           <Text style={styles.rpPrefix}>Rp</Text>
           <TextInput

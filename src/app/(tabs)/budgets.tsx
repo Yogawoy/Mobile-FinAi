@@ -1,11 +1,31 @@
-import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+  BudgetFormSheet,
+  type BudgetFormSubmitPayload,
+} from '@/components/budgets/BudgetFormSheet';
+import {
+  GoalFormSheet,
+  type GoalContributePayload,
+  type GoalCreatePayload,
+} from '@/components/budgets/GoalFormSheet';
+import {
+  GoalRealizeSheet,
+  type GoalRealizePayload,
+} from '@/components/budgets/GoalRealizeSheet';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useFinance } from '@/context/FinanceContext';
+import { formatIDR } from '@/lib/format';
+import { calculateGoalRecommendation } from '@/lib/goalCalculator';
+import {
+  type BudgetIconKey,
+  type BudgetItem,
+  type BudgetPeriod,
+  type GoalIconKey,
+  type GoalItem,
+} from '@/lib/mockData';
+import { budgetService } from '@/services/budget.service';
+import { goalService } from '@/services/goal.service';
+import { transactionService } from '@/services/transaction.service';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -25,6 +45,14 @@ import {
   TrendingUp,
   Utensils,
 } from 'lucide-react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, {
   Easing,
   FadeInDown,
@@ -33,32 +61,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BudgetFormSheet,
-  type BudgetFormSubmitPayload,
-} from '@/components/budgets/BudgetFormSheet';
-import {
-  GoalFormSheet,
-  type GoalContributePayload,
-  type GoalCreatePayload,
-} from '@/components/budgets/GoalFormSheet';
-import {
-  GoalRealizeSheet,
-  type GoalRealizePayload,
-} from '@/components/budgets/GoalRealizeSheet';
-import { useToast } from '@/components/ui/ToastProvider';
-import { BUDGET_RULE_META, useFinance } from '@/context/FinanceContext';
-import { formatIDR } from '@/lib/format';
-import { budgetService } from '@/services/budget.service';
-import { goalService } from '@/services/goal.service';
-import { calculateGoalRecommendation } from '@/lib/goalCalculator';
-import {
-  type BudgetIconKey,
-  type BudgetItem,
-  type GoalIconKey,
-  type GoalItem,
-} from '@/lib/mockData';
-import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 type ActiveTab = 'BUDGETS' | 'GOALS';
 
@@ -95,7 +97,7 @@ function getBudgetStatus(spent: number, limit: number, thresholdPct: number) {
   if (pct > 100) {
     return {
       pct,
-      label: 'Over-Budget',
+      label: 'Lewat Batas',
       color: Colors.expense,
       bg: Colors.expenseSoft,
       textColor: Colors.expenseText,
@@ -184,6 +186,7 @@ export default function BudgetsTabScreen() {
     setWallets,
     categories,
     budgets,
+    budgetMonthlySummary,
     setBudgets,
     goals,
     setGoals,
@@ -193,22 +196,60 @@ export default function BudgetsTabScreen() {
 
   const [budgetSheetVisible, setBudgetSheetVisible] = useState(false);
   const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null);
+  const [periodFilter, setPeriodFilter] = useState<'ALL' | BudgetPeriod>('ALL');
+
+  const filteredBudgets = useMemo(() => {
+    if (periodFilter === 'ALL') return budgets;
+    return budgets.filter((b) => (b.period ?? 'MONTHLY') === periodFilter);
+  }, [budgets, periodFilter]);
 
   const [goalSheetVisible, setGoalSheetVisible] = useState(false);
   const [contributingGoal, setContributingGoal] = useState<GoalItem | null>(null);
   const [realizingGoal, setRealizingGoal] = useState<GoalItem | null>(null);
 
   const budgetSummary = useMemo(() => {
-    const totalSpent = budgets.reduce((s, b) => s + b.spent, 0);
-    const totalLimit = budgets.reduce((s, b) => s + b.limit, 0);
+    if (periodFilter === 'ALL') {
+      const totalLimit =
+        budgetMonthlySummary?.totalMonthlyEquivalentLimit ??
+        budgets.reduce(
+          (s, b) => s + (b.monthlyEquivalentLimit ?? b.limit),
+          0
+        );
+      const totalSpent =
+        budgetMonthlySummary?.totalMonthlySpent ??
+        budgets.reduce((s, b) => s + b.spent, 0);
+      const pct = totalLimit > 0 ? Math.round((totalSpent / totalLimit) * 100) : 0;
+      const remaining = totalLimit - totalSpent;
+      const alertCount = budgets.filter((b) => {
+        const st = getBudgetStatus(b.spent, b.limit, b.alertThresholdPct);
+        return st.statusKey !== 'SAFE';
+      }).length;
+      return {
+        caption: 'TOTAL SETARA BULANAN',
+        totalSpent,
+        totalLimit,
+        pct,
+        remaining,
+        alertCount,
+      };
+    }
+
+    const totalSpent = filteredBudgets.reduce((s, b) => s + b.spent, 0);
+    const totalLimit = filteredBudgets.reduce((s, b) => s + b.limit, 0);
     const pct = totalLimit > 0 ? Math.round((totalSpent / totalLimit) * 100) : 0;
     const remaining = totalLimit - totalSpent;
-    const alertCount = budgets.filter((b) => {
+    const alertCount = filteredBudgets.filter((b) => {
       const st = getBudgetStatus(b.spent, b.limit, b.alertThresholdPct);
       return st.statusKey !== 'SAFE';
     }).length;
-    return { totalSpent, totalLimit, pct, remaining, alertCount };
-  }, [budgets]);
+    const caption =
+      periodFilter === 'DAILY'
+        ? 'TOTAL ANGGARAN HARIAN'
+        : periodFilter === 'WEEKLY'
+          ? 'TOTAL ANGGARAN MINGGUAN'
+          : 'TOTAL ANGGARAN BULANAN';
+    return { caption, totalSpent, totalLimit, pct, remaining, alertCount };
+  }, [budgets, filteredBudgets, periodFilter, budgetMonthlySummary]);
 
   const goalSummary = useMemo(() => {
     const totalCurrent = goals.reduce((s, g) => s + g.current, 0);
@@ -240,12 +281,13 @@ export default function BudgetsTabScreen() {
         prev.map((b) =>
           b.id === payload.id
             ? {
-                ...b,
-                name: payload.name,
-                iconKey: payload.iconKey,
-                limit: payload.limit,
-                alertThresholdPct: payload.alertThresholdPct,
-              }
+              ...b,
+              name: payload.name,
+              iconKey: payload.iconKey,
+              limit: payload.limit,
+              alertThresholdPct: payload.alertThresholdPct,
+              period: payload.period,
+            }
             : b
         )
       );
@@ -255,6 +297,7 @@ export default function BudgetsTabScreen() {
             categoryId: matchedCat.id,
             month: now.getMonth() + 1,
             year: now.getFullYear(),
+            period: payload.period,
             limitAmount: payload.limit,
             alertThresholdPct: payload.alertThresholdPct,
           });
@@ -273,6 +316,7 @@ export default function BudgetsTabScreen() {
       spent: 0,
       limit: payload.limit,
       alertThresholdPct: payload.alertThresholdPct,
+      period: payload.period,
     };
     setBudgets((prev) => [newBudget, ...prev]);
     if (matchedCat) {
@@ -281,6 +325,7 @@ export default function BudgetsTabScreen() {
           categoryId: matchedCat.id,
           month: now.getMonth() + 1,
           year: now.getFullYear(),
+          period: payload.period,
           limitAmount: payload.limit,
           alertThresholdPct: payload.alertThresholdPct,
         });
@@ -361,7 +406,11 @@ export default function BudgetsTabScreen() {
     }
 
     try {
-      await goalService.contributeGoal(payload.goalId, payload.amount);
+      await goalService.contributeGoal(payload.goalId, payload.amount, {
+        walletId: payload.sourceWalletId,
+        destinationWalletId: payload.targetWalletId,
+        note: 'Setoran target tabungan',
+      });
       await refreshAllData();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Gagal menyetor ke target', 'error');
@@ -392,6 +441,18 @@ export default function BudgetsTabScreen() {
     );
 
     try {
+      await transactionService.createTransaction({
+        type: payload.action,
+        amount: payload.amount,
+        walletId: payload.sourceWalletId,
+        destinationWalletId:
+          payload.action === 'TRANSFER' ? payload.destinationWalletId ?? null : null,
+        categoryId: null,
+        note:
+          payload.action === 'EXPENSE'
+            ? 'Realisasi target tabungan'
+            : 'Pindah dana target tabungan',
+      });
       await goalService.updateGoal(payload.goalId, { status: 'COMPLETED' });
       await refreshAllData();
     } catch (err) {
@@ -443,6 +504,43 @@ export default function BudgetsTabScreen() {
               <Text style={styles.addPillText}>Tambah</Text>
             </Pressable>
           </View>
+
+          {/* SEGMENTED TAB SWITCHER DI DALAM HEADER */}
+          <View style={styles.switcherWrap}>
+            <Pressable
+              onPress={() => setActiveTab('BUDGETS')}
+              style={[
+                styles.switcherTab,
+                activeTab === 'BUDGETS' && styles.switcherTabActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.switcherText,
+                  activeTab === 'BUDGETS' && styles.switcherTextActive,
+                ]}
+              >
+                Anggaran
+              </Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => setActiveTab('GOALS')}
+              style={[
+                styles.switcherTab,
+                activeTab === 'GOALS' && styles.switcherTabActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.switcherText,
+                  activeTab === 'GOALS' && styles.switcherTextActive,
+                ]}
+              >
+                Target Tabungan
+              </Text>
+            </Pressable>
+          </View>
         </LinearGradient>
 
         {/* KARTU RINGKASAN MENUMPANG */}
@@ -455,9 +553,9 @@ export default function BudgetsTabScreen() {
               <View style={styles.summaryTopRow}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.summaryCaption}>
-                    {hasCompletedSetup
-                      ? `POLA ${BUDGET_RULE_META[userProfile.budgetRule].label} • BATAS ${formatIDR(userProfile.safeDailyLimit)}/HR`
-                      : 'TOTAL TERPAKAI BULAN INI'}
+                    {periodFilter === 'ALL' && hasCompletedSetup
+                      ? `${budgetSummary.caption}, BATAS ${formatIDR(userProfile.safeDailyLimit)}/HR`
+                      : budgetSummary.caption}
                   </Text>
                   <View style={styles.summaryAmountRow}>
                     <Text style={[styles.summaryMainAmount, Typography.tabularNums]}>
@@ -593,42 +691,39 @@ export default function BudgetsTabScreen() {
           )}
         </Animated.View>
 
-        {/* SEGMENTED TAB SWITCHER */}
-        <View style={styles.switcherWrap}>
-          <Pressable
-            onPress={() => setActiveTab('BUDGETS')}
-            style={[
-              styles.switcherTab,
-              activeTab === 'BUDGETS' && styles.switcherTabActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.switcherText,
-                activeTab === 'BUDGETS' && styles.switcherTextActive,
-              ]}
-            >
-              Anggaran Bulanan
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab('GOALS')}
-            style={[
-              styles.switcherTab,
-              activeTab === 'GOALS' && styles.switcherTabActive,
-            ]}
-          >
-            <Text
-              style={[
-                styles.switcherText,
-                activeTab === 'GOALS' && styles.switcherTextActive,
-              ]}
-            >
-              Target Tabungan
-            </Text>
-          </Pressable>
-        </View>
+        {activeTab === 'BUDGETS' ? (
+          <View style={styles.periodFilterRow}>
+            {(
+              [
+                { key: 'ALL', label: 'Semua' },
+                { key: 'DAILY', label: 'Harian' },
+                { key: 'WEEKLY', label: 'Mingguan' },
+                { key: 'MONTHLY', label: 'Bulanan' },
+              ] as const
+            ).map((opt) => {
+              const active = periodFilter === opt.key;
+              return (
+                <Pressable
+                  key={opt.key}
+                  onPress={() => setPeriodFilter(opt.key)}
+                  style={[
+                    styles.periodFilterPill,
+                    active && styles.periodFilterPillActive,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.periodFilterText,
+                      active && styles.periodFilterTextActive,
+                    ]}
+                  >
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
 
         {/* CONTENT LIST */}
         <View style={styles.listWrap}>
@@ -656,78 +751,106 @@ export default function BudgetsTabScreen() {
                   <Text style={styles.emptyGoalBtnText}>Buat Anggaran Pertama</Text>
                 </Pressable>
               </Animated.View>
-            ) : budgets.map((budget, idx) => {
-                const st = getBudgetStatus(
-                  budget.spent,
-                  budget.limit,
-                  budget.alertThresholdPct
-                );
-                const diff = budget.limit - budget.spent;
+            ) : filteredBudgets.length === 0 ? (
+              <Animated.View entering={FadeInDown.duration(260)} style={styles.emptyCard}>
+                <Text style={styles.emptyTitle}>Tidak ada anggaran pada periode ini</Text>
+                <Text style={styles.emptyDesc}>
+                  Pilih filter Semua atau tambahkan anggaran baru untuk periode ini.
+                </Text>
+              </Animated.View>
+            ) : filteredBudgets.map((budget, idx) => {
+              const st = getBudgetStatus(
+                budget.spent,
+                budget.limit,
+                budget.alertThresholdPct
+              );
+              const diff = budget.limit - budget.spent;
+              const bPeriod = budget.period ?? 'MONTHLY';
+              const periodShort =
+                bPeriod === 'DAILY' ? 'Harian' : bPeriod === 'WEEKLY' ? 'Mingguan' : 'Bulanan';
+              const periodSpentPhrase =
+                bPeriod === 'DAILY'
+                  ? 'hari ini'
+                  : bPeriod === 'WEEKLY'
+                    ? 'minggu ini'
+                    : 'bulan ini';
 
-                return (
-                  <Animated.View
-                    key={budget.id}
-                    entering={FadeInDown.delay(Math.min(idx * 55, 220))
-                      .duration(320)
-                      .easing(Easing.out(Easing.cubic))}
+              return (
+                <Animated.View
+                  key={budget.id}
+                  entering={FadeInDown.delay(Math.min(idx * 55, 220))
+                    .duration(320)
+                    .easing(Easing.out(Easing.cubic))}
+                >
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/budget/[id]',
+                        params: { id: budget.id },
+                      } as never)
+                    }
+                    style={({ pressed }) => [
+                      styles.itemCard,
+                      pressed && { opacity: 0.85 },
+                    ]}
                   >
-                    <Pressable
-                      onPress={() => {
-                        setEditingBudget(budget);
-                        setBudgetSheetVisible(true);
-                      }}
-                      style={({ pressed }) => [
-                        styles.itemCard,
-                        pressed && { opacity: 0.85 },
-                      ]}
-                    >
-                      <View style={styles.cardTopRow}>
-                        <View style={styles.cardLeftGroup}>
-                          <View style={[styles.iconBox, { backgroundColor: st.bg }]}>
-                            {renderBudgetIcon(budget.iconKey, st.color)}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.cardTitle} numberOfLines={1}>
-                              {budget.name}
-                            </Text>
-                            <Text
-                              style={[
-                                styles.cardSubMicro,
-                                Typography.tabularNums,
-                                diff < 0 && { color: Colors.expense },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {diff < 0
-                                ? `Melebihi ${formatIDR(Math.abs(diff))}`
-                                : `Sisa ${formatIDR(diff)}`}
-                            </Text>
-                          </View>
+                    <View style={styles.cardTopRow}>
+                      <View style={styles.cardLeftGroup}>
+                        <View style={[styles.iconBox, { backgroundColor: st.bg }]}>
+                          {renderBudgetIcon(budget.iconKey, st.color)}
                         </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.cardTitle} numberOfLines={1}>
+                            {budget.name}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.cardSubMicro,
+                              Typography.tabularNums,
+                              diff < 0 && { color: Colors.expense },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {diff < 0
+                              ? `Melebihi ${formatIDR(Math.abs(diff))}`
+                              : `Sisa ${formatIDR(diff)}`}
+                          </Text>
+                        </View>
+                      </View>
 
+                      <View style={styles.badgeGroupRow}>
+                        <View style={styles.periodTag}>
+                          <Text style={styles.periodTagText}>{periodShort}</Text>
+                        </View>
                         <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
                           <Text style={[styles.statusBadgeText, { color: st.textColor }]}>
                             {st.label}
                           </Text>
                         </View>
                       </View>
+                    </View>
 
-                      <View style={styles.cardProgressTrack}>
-                        <AnimatedProgressFill pct={st.pct} color={st.color} height={7} />
-                      </View>
+                    <View style={styles.cardProgressTrack}>
+                      <AnimatedProgressFill pct={st.pct} color={st.color} height={7} />
+                    </View>
 
-                      <View style={styles.cardBottomRow}>
-                        <Text style={[styles.bottomLeftText, Typography.tabularNums]}>
-                          Terpakai {formatIDR(budget.spent)}
-                        </Text>
-                        <Text style={[styles.bottomRightText, Typography.tabularNums]}>
-                          Batas {formatIDR(budget.limit)} ({st.pct}%)
-                        </Text>
-                      </View>
-                    </Pressable>
-                  </Animated.View>
-                );
-              })
+                    <View style={styles.cardBottomRow}>
+                      <Text style={[styles.bottomLeftText, Typography.tabularNums]}>
+                        Terpakai {periodSpentPhrase} {formatIDR(budget.spent)}
+                      </Text>
+                      <Text style={[styles.bottomRightText, Typography.tabularNums]}>
+                        Batas {formatIDR(budget.limit)} ({st.pct}%)
+                      </Text>
+                    </View>
+                    {bPeriod !== 'MONTHLY' && budget.monthlyEquivalentLimit ? (
+                      <Text style={[styles.monthlyEqMicro, Typography.tabularNums]}>
+                        Setara ≈ {formatIDR(budget.monthlyEquivalentLimit)}/bln
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                </Animated.View>
+              );
+            })
             : goals.length === 0 ? (
               <Animated.View
                 entering={FadeInDown.duration(300)}
@@ -752,140 +875,155 @@ export default function BudgetsTabScreen() {
                 </Pressable>
               </Animated.View>
             ) : goals.map((goal, idx) => {
-                const pct =
-                  goal.target > 0
-                    ? Math.round((goal.current / goal.target) * 100)
-                    : 0;
-                const isDone = pct >= 100;
-                const isRealized = Boolean(goal.isRealized);
-                const rec = calculateGoalRecommendation(
-                  goal.current,
-                  goal.target,
-                  goal.deadline,
-                  goal.frequency
-                );
+              const pct =
+                goal.target > 0
+                  ? Math.round((goal.current / goal.target) * 100)
+                  : 0;
+              const isDone = pct >= 100;
+              const isRealized = Boolean(goal.isRealized);
+              const rec = calculateGoalRecommendation(
+                goal.current,
+                goal.target,
+                goal.deadline,
+                goal.frequency
+              );
 
-                return (
-                  <Animated.View
-                    key={goal.id}
-                    entering={FadeInDown.delay(Math.min(idx * 65, 220))
-                      .duration(320)
-                      .easing(Easing.out(Easing.cubic))}
+              return (
+                <Animated.View
+                  key={goal.id}
+                  entering={FadeInDown.delay(Math.min(idx * 65, 220))
+                    .duration(320)
+                    .easing(Easing.out(Easing.cubic))}
+                >
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/goal/[id]',
+                        params: { id: goal.id },
+                      } as never)
+                    }
+                    style={({ pressed }) => [
+                      styles.itemCard,
+                      pressed && { opacity: 0.85 },
+                    ]}
                   >
-                    <View style={styles.itemCard}>
-                      <View style={styles.cardTopRow}>
-                        <View style={styles.cardLeftGroup}>
-                          <View
-                            style={[
-                              styles.iconBox,
-                              {
-                                backgroundColor: isRealized
-                                  ? '#F1F5F9'
-                                  : isDone
-                                    ? Colors.incomeSoft
-                                    : Colors.primarySoft,
-                              },
-                            ]}
-                          >
-                            {renderGoalIcon(
-                              goal.iconKey,
-                              isRealized
-                                ? Colors.textMuted
-                                : isDone
-                                  ? Colors.income
-                                  : Colors.primary
-                            )}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.cardTitle} numberOfLines={1}>
-                              {goal.name}
-                            </Text>
-                            <Text style={styles.cardSubMicro} numberOfLines={1}>
-                              Target {goal.deadline}
-                              {goal.walletName ? ` · ${goal.walletName}` : ''}
-                            </Text>
-                            {!isDone && !isRealized && rec.amount > 0 ? (
-                              <Text style={[styles.goalRecMicro, Typography.tabularNums]}>
-                                {rec.compactLabel}
-                              </Text>
-                            ) : null}
-                          </View>
-                        </View>
-
-                        {isRealized ? (
-                          <View
-                            style={[
-                              styles.statusBadge,
-                              { backgroundColor: '#F1F5F9' },
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.statusBadgeText,
-                                { color: Colors.textSecondary },
-                              ]}
-                            >
-                              Selesai
-                            </Text>
-                          </View>
-                        ) : isDone ? (
-                          <Pressable
-                            onPress={() => setRealizingGoal(goal)}
-                            style={({ pressed }) => [
-                              styles.useFundPill,
-                              pressed && { opacity: 0.8 },
-                            ]}
-                          >
-                            <CheckCircle2
-                              size={13}
-                              color={Colors.incomeText}
-                              strokeWidth={2.2}
-                            />
-                            <Text style={styles.useFundText}>Gunakan Dana</Text>
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            onPress={() => {
-                              setContributingGoal(goal);
-                              setGoalSheetVisible(true);
-                            }}
-                            style={({ pressed }) => [
-                              styles.saveQuickPill,
-                              pressed && { opacity: 0.78 },
-                            ]}
-                          >
-                            <Plus size={13} color={Colors.primaryDark} strokeWidth={2.4} />
-                            <Text style={styles.saveQuickText}>Tabung</Text>
-                          </Pressable>
-                        )}
-                      </View>
-
-                      <View style={styles.cardProgressTrack}>
-                        <AnimatedProgressFill
-                          pct={pct}
-                          color={isDone ? Colors.income : Colors.primary}
-                          height={7}
-                        />
-                      </View>
-
-                      <View style={styles.cardBottomRow}>
-                        <Text style={[styles.bottomLeftText, Typography.tabularNums]}>
-                          {formatIDR(goal.current)} / {formatIDR(goal.target)}
-                        </Text>
-                        <Text
+                    <View style={styles.cardTopRow}>
+                      <View style={styles.cardLeftGroup}>
+                        <View
                           style={[
-                            styles.goalPctText,
-                            Typography.tabularNums,
-                            isDone && { color: Colors.income },
+                            styles.iconBox,
+                            {
+                              backgroundColor: isRealized
+                                ? '#F1F5F9'
+                                : isDone
+                                  ? Colors.incomeSoft
+                                  : Colors.primarySoft,
+                            },
                           ]}
                         >
-                          {pct}%
-                        </Text>
+                          {renderGoalIcon(
+                            goal.iconKey,
+                            isRealized
+                              ? Colors.textMuted
+                              : isDone
+                                ? Colors.income
+                                : Colors.primary
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.cardTitle} numberOfLines={1}>
+                            {goal.name}
+                          </Text>
+                          <Text style={styles.cardSubMicro} numberOfLines={1}>
+                            Target {goal.deadline}
+                            {goal.walletName ? `, ${goal.walletName}` : ''}
+                          </Text>
+                          {!isDone && !isRealized && rec.amount > 0 ? (
+                            <Text style={[styles.goalRecMicro, Typography.tabularNums]}>
+                              {rec.compactLabel}
+                            </Text>
+                          ) : null}
+                        </View>
                       </View>
+
+                      {isRealized ? (
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            { backgroundColor: '#F1F5F9' },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusBadgeText,
+                              { color: Colors.textSecondary },
+                            ]}
+                          >
+                            Selesai
+                          </Text>
+                        </View>
+                      ) : isDone ? (
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setRealizingGoal(goal);
+                          }}
+                          style={({ pressed }) => [
+                            styles.useFundPill,
+                            pressed && { opacity: 0.8 },
+                          ]}
+                        >
+                          <CheckCircle2
+                            size={13}
+                            color={Colors.incomeText}
+                            strokeWidth={2.2}
+                          />
+                          <Text style={styles.useFundText}>Gunakan Dana</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            setContributingGoal(goal);
+                            setGoalSheetVisible(true);
+                          }}
+                          style={({ pressed }) => [
+                            styles.saveQuickPill,
+                            pressed && { opacity: 0.78 },
+                          ]}
+                        >
+                          <Plus size={13} color={Colors.primaryDark} strokeWidth={2.4} />
+                          <Text style={styles.saveQuickText}>Tabung</Text>
+                        </Pressable>
+                      )}
                     </View>
-                  </Animated.View>
-                );
-              })}
+
+                    <View style={styles.cardProgressTrack}>
+                      <AnimatedProgressFill
+                        pct={pct}
+                        color={isDone ? Colors.income : Colors.primary}
+                        height={7}
+                      />
+                    </View>
+
+                    <View style={styles.cardBottomRow}>
+                      <Text style={[styles.bottomLeftText, Typography.tabularNums]}>
+                        {formatIDR(goal.current)} / {formatIDR(goal.target)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.goalPctText,
+                          Typography.tabularNums,
+                          isDone && { color: Colors.income },
+                        ]}
+                      >
+                        {pct}%
+                      </Text>
+                    </View>
+                  </Pressable>
+                </Animated.View>
+              );
+            })}
         </View>
       </ScrollView>
 
@@ -895,7 +1033,6 @@ export default function BudgetsTabScreen() {
         editingBudget={editingBudget}
         onClose={() => {
           setBudgetSheetVisible(false);
-          setEditingBudget(null);
         }}
         onSubmit={handleBudgetSubmit}
         onDelete={handleBudgetDelete}
@@ -1074,34 +1211,36 @@ const styles = StyleSheet.create({
   },
 
   switcherWrap: {
-    marginHorizontal: 16,
-    marginTop: 16,
+    marginTop: 14,
     flexDirection: 'row',
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: 13,
+    padding: 3,
     gap: 4,
   },
   switcherTab: {
     flex: 1,
-    height: 38,
+    height: 36,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
   },
   switcherTabActive: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
   },
   switcherText: {
     fontFamily: FontFamily.medium,
     fontSize: 13,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.85)',
   },
   switcherTextActive: {
     fontFamily: FontFamily.semibold,
-    color: '#FFFFFF',
+    color: Colors.primaryDark,
   },
 
   listWrap: {
@@ -1147,6 +1286,82 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: Colors.textMuted,
     marginTop: 2,
+  },
+  emptyCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  emptyTitle: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  emptyDesc: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12.5,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  badgeGroupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  periodTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  periodTagText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 10.5,
+    color: Colors.textSecondary,
+  },
+  monthlyEqMicro: {
+    fontFamily: FontFamily.regular,
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'right',
+    marginTop: 4,
+  },
+  periodFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 2,
+    gap: 8,
+  },
+  periodFilterPill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  periodFilterPillActive: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#93C5FD',
+  },
+  periodFilterText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12.5,
+    color: '#64748B',
+  },
+  periodFilterTextActive: {
+    fontFamily: FontFamily.semibold,
+    color: '#2563EB',
   },
   statusBadge: {
     paddingHorizontal: 10,

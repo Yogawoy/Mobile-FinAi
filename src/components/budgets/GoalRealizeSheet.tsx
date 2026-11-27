@@ -34,21 +34,30 @@ export function GoalRealizeSheet({
 }: GoalRealizeSheetProps) {
   const { showToast } = useToast();
   const [action, setAction] = useState<GoalRealizeAction>('EXPENSE');
+  const [selectedSourceId, setSelectedSourceId] = useState(wallets[0]?.id || 'bca');
   const [destWalletId, setDestWalletId] = useState('bca');
 
-  const storageWalletId = goal?.walletId || wallets[0]?.id || 'mandiri';
+  const amountToUse = goal?.current ?? 0;
+  const storageWalletId = selectedSourceId || goal?.walletId || wallets[0]?.id || '';
   const storageWallet = wallets.find((w) => w.id === storageWalletId);
   const otherWallets = wallets.filter((w) => w.id !== storageWalletId);
 
   useEffect(() => {
     if (!visible || !goal) return;
     setAction('EXPENSE');
-    setDestWalletId(otherWallets[0]?.id || wallets[0]?.id || 'bca');
+    const sufficientWallet = wallets.find((w) => w.balance >= goal.current);
+    const initialSource =
+      (goal.walletId && wallets.some((w) => w.id === goal.walletId)
+        ? goal.walletId
+        : sufficientWallet?.id) ||
+      wallets[0]?.id ||
+      '';
+    setSelectedSourceId(initialSource);
+    const others = wallets.filter((w) => w.id !== initialSource);
+    setDestWalletId(others[0]?.id || wallets[0]?.id || '');
   }, [visible, goal, wallets]);
 
   if (!goal) return null;
-
-  const amountToUse = goal.current;
 
   const handleConfirm = () => {
     if (storageWallet && storageWallet.balance < amountToUse) {
@@ -110,6 +119,44 @@ export function GoalRealizeSheet({
           {formatIDR(storageWallet?.balance ?? 0)})
         </Text>
       </View>
+
+      <Text style={styles.sectionLabel}>Pilih Dompet Sumber Dana</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
+      >
+        {wallets.map((w) => {
+          const selected = w.id === storageWalletId;
+          const enough = w.balance >= amountToUse;
+          return (
+            <Pressable
+              key={w.id}
+              onPress={() => {
+                setSelectedSourceId(w.id);
+                if (destWalletId === w.id) {
+                  const nextDest = wallets.find((o) => o.id !== w.id);
+                  if (nextDest) setDestWalletId(nextDest.id);
+                }
+              }}
+              style={[
+                styles.optionCard,
+                { marginBottom: 0, paddingVertical: 8, paddingHorizontal: 12 },
+                selected && styles.optionCardActive,
+              ]}
+            >
+              <View>
+                <Text style={[styles.optionTitle, selected && { color: Colors.primaryDark }]}>
+                  {w.name}
+                </Text>
+                <Text style={[styles.optionSub, !enough && { color: Colors.expense }]}>
+                  {formatIDR(w.balance)}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
 
       <Text style={styles.sectionLabel}>Pilih Cara Penggunaan Dana</Text>
 

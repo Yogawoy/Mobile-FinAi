@@ -7,7 +7,10 @@ import {
   type ChatLiveContext,
   type ChatRichCardType,
 } from '@/lib/mockAiChat';
-import { type AiTransactionCardData } from '@/services/ai.service';
+import {
+  type AiTransactionCardData,
+  type AiWalletOption,
+} from '@/services/ai.service';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 interface ChatCategoryOption {
@@ -26,6 +29,7 @@ interface ChatRichCardProps {
   onConfirmAction?: () => void;
   onCancelAction?: () => void;
   onSelectWallet?: (walletName: string) => void;
+  onSelectPlanWallet?: (wallet: AiWalletOption) => void;
   onSelectCategory?: (category: { id: string; label: string }) => void;
 }
 
@@ -75,6 +79,7 @@ export function ChatRichCard({
   onConfirmAction,
   onCancelAction,
   onSelectWallet,
+  onSelectPlanWallet,
   onSelectCategory,
 }: ChatRichCardProps) {
   const [pickingCategory, setPickingCategory] = useState(false);
@@ -115,7 +120,7 @@ export function ChatRichCard({
                   !w.sufficient && styles.walletPickerTextDisabled,
                 ]}
               >
-                {w.sufficient ? formatIDR(w.currentBalance) : `${formatIDR(w.currentBalance)} · Kurang`}
+                {w.sufficient ? formatIDR(w.currentBalance) : `${formatIDR(w.currentBalance)} (Kurang)`}
               </Text>
             </Pressable>
           ))}
@@ -288,7 +293,7 @@ export function ChatRichCard({
             >
               <Check size={14} color="#FFFFFF" strokeWidth={2.4} />
               <Text style={styles.txConfirmText}>
-                {isProcessingAction ? 'Menyimpan...' : 'Konfirmasi'}
+                {isProcessingAction ? 'Menyimpan' : 'Konfirmasi'}
               </Text>
             </Pressable>
           </View>
@@ -305,7 +310,7 @@ export function ChatRichCard({
               ]}
             >
               <Text style={styles.txUndoText}>
-                {isProcessingAction ? 'Membatalkan...' : 'Batalkan'}
+                {isProcessingAction ? 'Membatalkan' : 'Batalkan'}
               </Text>
             </Pressable>
           </View>
@@ -314,20 +319,266 @@ export function ChatRichCard({
     );
   }
 
+  if (type === 'FINANCIAL_PLAN' && cardData?.plan) {
+    const p = cardData.plan;
+    const badge =
+      p.feasibility === 'realistic'
+        ? { label: 'Realistis', bg: Colors.incomeSoft, color: Colors.incomeText }
+        : p.feasibility === 'tight'
+          ? { label: 'Ketat', bg: Colors.warningSoft, color: Colors.warningText }
+          : p.feasibility === 'unlikely'
+            ? { label: 'Berat', bg: Colors.expenseSoft, color: Colors.expenseText }
+            : { label: 'Sisa Uang Belum Tercatat', bg: Colors.warningSoft, color: Colors.warningText };
+
+    const hasWallets = Boolean(cardData.wallets && cardData.wallets.length > 0);
+
+    return (
+      <View style={styles.subCard}>
+        <View style={styles.txBadgeRow}>
+          <View style={[styles.txBadge, { backgroundColor: badge.bg }]}>
+            <Text style={[styles.txBadgeText, { color: badge.color }]}>
+              Rencana: {badge.label}
+            </Text>
+          </View>
+        </View>
+        <KeyValueRow label="Target" value={p.targetName} />
+        <KeyValueRow label="Dana Dibutuhkan" value={formatIDR(p.remainingAmount)} />
+        <KeyValueRow label="Durasi" value={p.durationLabel ?? `${p.durationMonths} bulan`} />
+        <KeyValueRow
+          label={p.requiredDailySaving && p.requiredDailySaving > 0 ? 'Nabung / Hari' : 'Nabung / Bulan'}
+          value={formatIDR(
+            p.requiredDailySaving && p.requiredDailySaving > 0
+              ? p.requiredDailySaving
+              : p.requiredMonthlySaving
+          )}
+          valueColor={Colors.primary}
+        />
+        <KeyValueRow
+          label={p.monthlyNetCashFlow > 0 ? 'Porsi dari Sisa Uang' : 'Sisa Uang Bulanan'}
+          value={p.monthlyNetCashFlow > 0 ? `${p.requiredPercentageOfNet}%` : formatIDR(0)}
+          valueColor={badge.color}
+          isLast={!p.assumptions?.length && !hasWallets}
+        />
+        {p.assumptions?.length ? (
+          <Text style={styles.alignedSub}>{p.assumptions[0]}</Text>
+        ) : null}
+
+        {hasWallets && onSelectPlanWallet ? (
+          <View style={{ marginTop: 6, gap: 6 }}>
+            <Text style={[styles.kvLabel, { fontFamily: FontFamily.semibold, color: Colors.textPrimary }]}>
+              Tabungan ini mau ditaruh di dompet mana?
+            </Text>
+            <View style={styles.walletPickerList}>
+              {cardData.wallets!.map((w) => (
+                <Pressable
+                  key={w.id}
+                  disabled={isProcessingAction}
+                  onPress={() => onSelectPlanWallet(w)}
+                  style={({ pressed }) => [
+                    styles.walletPickerBtn,
+                    pressed && { opacity: 0.78 },
+                  ]}
+                >
+                  <Text style={styles.walletPickerName}>{w.name}</Text>
+                  <Text style={[styles.walletPickerBalance, Typography.tabularNums]}>
+                    {formatIDR(w.currentBalance)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
+  if (type === 'SPENDING_BREAKDOWN' && cardData?.spendingBreakdown) {
+    const sb = cardData.spendingBreakdown;
+    return (
+      <View style={styles.subCard}>
+        <View style={styles.txBadgeRow}>
+          <View style={[styles.txBadge, { backgroundColor: '#EEF2FF' }]}>
+            <Text style={[styles.txBadgeText, { color: Colors.primary }]}>
+              Pengeluaran {sb.period}
+            </Text>
+          </View>
+        </View>
+        {sb.items.length === 0 ? (
+          <Text style={styles.alignedSub}>Belum ada pengeluaran tercatat di periode ini.</Text>
+        ) : (
+          sb.items.map((item, idx) => (
+            <KeyValueRow
+              key={`${item.category}-${idx}`}
+              label={`${item.category} (${item.percentage}%)`}
+              value={formatIDR(item.total)}
+              valueColor={Colors.expense}
+              isLast={idx === sb.items.length - 1}
+            />
+          ))
+        )}
+      </View>
+    );
+  }
+
+  if (type === 'GOAL' && cardData?.goals) {
+    return (
+      <View style={styles.subCard}>
+        {cardData.goals.length === 0 ? (
+          <Text style={styles.alignedSub}>Belum ada target tabungan aktif.</Text>
+        ) : (
+          cardData.goals.map((g, idx) => (
+            <KeyValueRow
+              key={g.id}
+              label={`${g.name} (${g.percentage}%)`}
+              value={`${formatIDR(g.currentAmount)} / ${formatIDR(g.targetAmount)}`}
+              valueColor={Colors.primary}
+              isLast={idx === cardData.goals!.length - 1}
+            />
+          ))
+        )}
+      </View>
+    );
+  }
+
+  if (type === 'WALLET' && cardData?.wallets) {
+    return (
+      <View style={styles.subCard}>
+        <KeyValueRow
+          label="Total Saldo Aktif"
+          value={formatIDR(cardData.totalBalance ?? 0)}
+          valueColor={Colors.primary}
+          isLast={cardData.wallets.length === 0}
+        />
+        {cardData.wallets.map((w, idx) => (
+          <KeyValueRow
+            key={w.id}
+            label={w.name}
+            value={formatIDR(w.currentBalance)}
+            isLast={idx === cardData.wallets!.length - 1}
+          />
+        ))}
+      </View>
+    );
+  }
+
+  if (
+    (type === 'BUDGET_SET' ||
+      type === 'BUDGET_UPDATED' ||
+      type === 'BUDGET_DELETED' ||
+      type === 'BUDGET_RESET') &&
+    cardData
+  ) {
+    const periodWord =
+      cardData.period === 'DAILY'
+        ? 'Harian'
+        : cardData.period === 'WEEKLY'
+          ? 'Mingguan'
+          : 'Bulanan';
+    const badgeStyle =
+      type === 'BUDGET_DELETED'
+        ? { bg: '#FEF2F2', color: '#DC2626', text: '✓ Anggaran Dihapus' }
+        : type === 'BUDGET_RESET'
+          ? { bg: '#FFFBEB', color: '#D97706', text: '✓ Anggaran Direset' }
+          : type === 'BUDGET_UPDATED'
+            ? { bg: '#EFF6FF', color: '#2563EB', text: '✓ Anggaran Diperbarui' }
+            : { bg: '#ECFDF5', color: '#059669', text: '✓ Anggaran Ditambahkan' };
+    const limitVal =
+      type === 'BUDGET_DELETED'
+        ? cardData.oldLimitAmount ?? cardData.limitAmount ?? cardData.amount ?? 0
+        : cardData.limitAmount ?? cardData.amount ?? 0;
+
+    return (
+      <View style={styles.subCard}>
+        <View style={styles.txBadgeRow}>
+          <View style={[styles.txBadge, { backgroundColor: badgeStyle.bg }]}>
+            <Text style={[styles.txBadgeText, { color: badgeStyle.color }]}>
+              {badgeStyle.text}
+            </Text>
+          </View>
+        </View>
+        <KeyValueRow label="Kategori" value={cardData.categoryName ?? 'Anggaran'} />
+        {type === 'BUDGET_RESET' ? (
+          <KeyValueRow label="Terpakai Sekarang" value={formatIDR(0)} valueColor={Colors.income} />
+        ) : null}
+        <KeyValueRow
+          label={
+            type === 'BUDGET_DELETED'
+              ? 'Batas Lama'
+              : type === 'BUDGET_UPDATED'
+                ? 'Batas Baru'
+                : 'Batas'
+          }
+          value={formatIDR(limitVal)}
+          valueColor={type === 'BUDGET_DELETED' ? Colors.expense : Colors.primary}
+        />
+        <KeyValueRow label="Periode" value={periodWord} isLast />
+      </View>
+    );
+  }
+
+  if (type === 'BUDGET' && cardData?.budgets) {
+    return (
+      <View style={styles.subCard}>
+        {cardData.budgets.length === 0 ? (
+          <Text style={styles.alignedSub}>Belum ada pos anggaran aktif bulan ini.</Text>
+        ) : (
+          cardData.budgets.map((b, idx) => {
+            const pct = Math.round(b.percentage);
+            const statusText =
+              pct > 100 ? 'Lewat Batas' : pct >= 75 ? 'Hampir Penuh' : 'Aman';
+            const valColor =
+              pct > 100 ? Colors.expense : pct >= 75 ? Colors.warningText : Colors.income;
+            return (
+              <KeyValueRow
+                key={b.id}
+                label={`${b.category.name} (${pct}%, ${statusText})`}
+                value={`${formatIDR(b.spentAmount)} / ${formatIDR(b.limitAmount)}`}
+                valueColor={valColor}
+                isLast={idx === cardData.budgets!.length - 1}
+              />
+            );
+          })
+        )}
+      </View>
+    );
+  }
+
   const m = computeLiveMetrics(live);
 
   if (type === 'SUMMARY') {
+    if (cardData?.summary) {
+      const s = cardData.summary;
+      return (
+        <View style={styles.subCard}>
+          <KeyValueRow
+            label={`Skor SAW (${s.period})`}
+            value={s.sawScore !== null ? `${s.sawScore} / 100 (${s.sawStatus})` : s.sawStatus}
+            valueColor={s.sawScore !== null && s.sawScore >= 80 ? Colors.income : Colors.primary}
+          />
+          <KeyValueRow label="Pemasukan" value={formatIDR(s.income)} valueColor={Colors.income} />
+          <KeyValueRow label="Pengeluaran" value={formatIDR(s.expense)} valueColor={Colors.expense} />
+          <KeyValueRow label="Total Saldo" value={formatIDR(s.totalBalance)} valueColor={Colors.primary} />
+          <KeyValueRow
+            label="Sisa Uang"
+            value={formatIDR(s.remaining)}
+            valueColor={s.remaining >= 0 ? Colors.income : Colors.expense}
+            isLast
+          />
+        </View>
+      );
+    }
+
     const scoreColor =
       m.healthScore >= 80 ? Colors.income : Colors.warningText;
     return (
       <View style={styles.subCard}>
         <KeyValueRow
           label="Skor Kesehatan"
-          value={`${m.healthScore} / 100 · ${m.healthLabel}`}
+          value={`${m.healthScore} / 100 (${m.healthLabel})`}
           valueColor={scoreColor}
         />
         <KeyValueRow
-          label={live?.hasCompletedSetup ? 'Batas Aman Harian' : 'Burn Rate Harian'}
+          label={live?.hasCompletedSetup ? 'Batas Aman Harian' : 'Rata-rata Belanja Harian'}
           value={
             live?.hasCompletedSetup
               ? `${formatIDR(live.userProfile.safeDailyLimit)} / hr`
@@ -353,12 +604,12 @@ export function ChatRichCard({
           value={`${formatIDR(m.burnRate)} / hr`}
         />
         <KeyValueRow
-          label="Proyeksi Pengeluaran"
+          label="Perkiraan Pengeluaran"
           value={formatIDR(m.projectedExpense)}
           valueColor={Colors.expense}
         />
         <KeyValueRow
-          label="Estimasi Akhir Bulan"
+          label="Perkiraan Sisa Uang Akhir Bulan"
           value={`${surplusPrefix}${formatIDR(Math.abs(m.projectedSurplus))}`}
           valueColor={m.projectedSurplus >= 0 ? Colors.income : Colors.expense}
           isLast
@@ -421,7 +672,7 @@ export function ChatRichCard({
                       { color: isOver ? Colors.expenseText : Colors.warningText },
                     ]}
                   >
-                    {b.name} · {pct}%
+                    {b.name} ({pct}%)
                   </Text>
                   <Text style={styles.alignedSub}>
                     Terpakai {formatIDR(b.spent)} dari batas {formatIDR(b.limit)}

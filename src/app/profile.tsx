@@ -43,7 +43,7 @@ const AUDIT_LOGS = [
     id: 'log-1',
     action: 'AUTH_LOGIN',
     detail: 'Masuk berhasil via Expo Go',
-    device: 'Android · Redmi Note 12',
+    device: 'Redmi Note 12',
     time: 'Hari ini, 09:42',
     badgeBg: '#ECFDF5',
     badgeColor: '#047857',
@@ -61,7 +61,7 @@ const AUDIT_LOGS = [
     id: 'log-3',
     action: 'TX_CREATE',
     detail: 'Mencatat pengeluaran Makan Siang Rp 45.000',
-    device: 'Android · Redmi Note 12',
+    device: 'Redmi Note 12',
     time: 'Kemarin, 12:35',
     badgeBg: '#F8FAFC',
     badgeColor: '#475569',
@@ -70,7 +70,7 @@ const AUDIT_LOGS = [
     id: 'log-4',
     action: 'BUDGET_UPDATE',
     detail: 'Mengubah batas anggaran Makanan & Minuman',
-    device: 'Android · Redmi Note 12',
+    device: 'Redmi Note 12',
     time: '20 Nov 2026, 18:10',
     badgeBg: '#FFFBEB',
     badgeColor: '#B45309',
@@ -212,9 +212,6 @@ export default function ProfileScreen() {
             </View>
             <Text style={styles.userName}>{name}</Text>
             <Text style={styles.userEmail}>{email}</Text>
-            <View style={styles.memberPill}>
-              <Text style={styles.memberPillText}>Member FinAI • Aktif</Text>
-            </View>
           </View>
         </LinearGradient>
 
@@ -379,7 +376,7 @@ export default function ProfileScreen() {
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text style={styles.aboutTitle}>FinAI Mobile v1.0</Text>
                   <Text style={styles.aboutSub}>
-                    Cloud Computing • Arsitektur Decoupled (Expo + Express + Gemini AI)
+                    Asisten Keuangan Pribadi
                   </Text>
                 </View>
               </View>

@@ -185,7 +185,7 @@ export function RealisticWalletCard({
               <Text style={[styles.embossedNumber, Typography.tabularNums]}>
                 {formatEmbossedNumber(wallet.last4)}
               </Text>
-              <Text style={styles.holderText}>CARD HOLDER · YOGA</Text>
+              <Text style={styles.holderText}>CARD HOLDER YOGA</Text>
             </View>
 
             <View style={styles.validWrap}>

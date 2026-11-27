@@ -9,7 +9,8 @@ import {
   QUICK_PROMPTS,
   type ChatMessage,
 } from '@/lib/mockAiChat';
-import { aiService } from '@/services/ai.service';
+import { aiService, type AiWalletOption } from '@/services/ai.service';
+import { budgetService } from '@/services/budget.service';
 import { goalService } from '@/services/goal.service';
 import { transactionService } from '@/services/transaction.service';
 import { Colors, FontFamily, Radius, TouchTarget } from '@/theme/tokens';
@@ -218,6 +219,16 @@ export default function AiChatbotScreen() {
       const richCard =
         res.cardType === 'FORECAST' ||
         res.cardType === 'ANOMALY' ||
+        res.cardType === 'BUDGET' ||
+        res.cardType === 'BUDGET_SET' ||
+        res.cardType === 'BUDGET_UPDATED' ||
+        res.cardType === 'BUDGET_DELETED' ||
+        res.cardType === 'BUDGET_RESET' ||
+        res.cardType === 'SPENDING_BREAKDOWN' ||
+        res.cardType === 'SUMMARY' ||
+        res.cardType === 'GOAL' ||
+        res.cardType === 'WALLET' ||
+        res.cardType === 'FINANCIAL_PLAN' ||
         res.cardType === 'WALLET_PICKER' ||
         res.cardType === 'TRANSACTION_PREVIEW' ||
         res.cardType === 'TRANSACTION_CREATED'
@@ -239,7 +250,8 @@ export default function AiChatbotScreen() {
             : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch {
+    } catch (err) {
+      console.warn('[FinAI Chat] Falling back to local reply:', err);
       const reply = generateAiReply(trimmed, liveContext);
       const aiMsg: ChatMessage = {
         id: `ai-${Date.now()}`,
@@ -274,13 +286,160 @@ export default function AiChatbotScreen() {
     );
   };
 
+  const handleSelectPlanWallet = async (
+    msg: ChatMessage,
+    destWallet: AiWalletOption
+  ) => {
+    const plan = msg.cardData?.plan;
+    if (!plan || processingMsgId) return;
+    setProcessingMsgId(msg.id);
+    try {
+      let goalId = plan.relatedGoalId ?? null;
+      if (!goalId) {
+        const deadlineDate = new Date();
+        if (plan.durationDays && plan.durationDays > 0) {
+          deadlineDate.setDate(deadlineDate.getDate() + plan.durationDays);
+        } else {
+          deadlineDate.setMonth(deadlineDate.getMonth() + Math.max(1, plan.durationMonths));
+        }
+        const createdGoal = await goalService.createGoal({
+          name: plan.targetName,
+          targetAmount: plan.targetAmount,
+          currentAmount: plan.currentAmount,
+          deadline: deadlineDate.toISOString(),
+        });
+        goalId = createdGoal.id;
+        await refreshAllData();
+      }
+
+      const isDailyPlan = Boolean(plan.requiredDailySaving && plan.requiredDailySaving > 0);
+      const firstSaving = Math.max(
+        0,
+        isDailyPlan ? plan.requiredDailySaving! : plan.requiredMonthlySaving
+      );
+      const periodWord = isDailyPlan ? 'hari pertama' : 'bulan pertama';
+      const rawWallets =
+        msg.cardData?.wallets && msg.cardData.wallets.length > 0
+          ? msg.cardData.wallets
+          : wallets
+              .filter((w) => !w.isArchived)
+              .map((w) => ({
+                id: w.id,
+                name: w.name,
+                type: w.type,
+                currentBalance: w.balance,
+                sufficient: w.balance >= firstSaving,
+              }));
+      const sourceWallets = rawWallets.filter((w) => w.id !== destWallet.id);
+
+      if (firstSaving > 0 && sourceWallets.length > 0) {
+        const pickerMsg: ChatMessage = {
+          id: `ai-plan-src-wallet-${Date.now()}`,
+          sender: 'AI',
+          text: `Siap! Target "${plan.targetName}" sudah disimpan ke dompet ${destWallet.name}. Untuk setoran ${periodWord} Rp ${firstSaving.toLocaleString('id-ID')}, mau ditransfer dari dompet mana?`,
+          timestamp: formatNowTime(),
+          richCard: 'WALLET_PICKER',
+          cardData: {
+            intent: 'GOAL_CONTRIBUTE',
+            goalId,
+            type: 'TRANSFER',
+            amount: firstSaving,
+            note: `Setoran target ${plan.targetName}`,
+            destinationWalletId: destWallet.id,
+            destinationWalletName: destWallet.name,
+            wallets: sourceWallets.map((w) => ({
+              ...w,
+              sufficient: w.currentBalance >= firstSaving,
+            })),
+          },
+        };
+        setMessages((prev) => [...prev, pickerMsg]);
+      } else {
+        const previewMsg: ChatMessage = {
+          id: `ai-plan-wallet-${Date.now()}`,
+          sender: 'AI',
+          text: `Siap! Target "${plan.targetName}" telah disimpan dan dihubungkan dengan dompet ${destWallet.name}. Mau langsung setor tabungan ${periodWord} sebesar Rp ${firstSaving.toLocaleString('id-ID')}?`,
+          timestamp: formatNowTime(),
+          richCard: firstSaving > 0 ? 'TRANSACTION_PREVIEW' : undefined,
+          actionStatus: firstSaving > 0 ? 'PENDING' : undefined,
+          cardData:
+            firstSaving > 0
+              ? {
+                  intent: 'GOAL_CONTRIBUTE',
+                  goalId,
+                  type: 'EXPENSE',
+                  amount: firstSaving,
+                  note: `Setoran target ${plan.targetName}`,
+                  walletId: destWallet.id,
+                  walletName: destWallet.name,
+                  currentWalletBalance: destWallet.currentBalance,
+                  projectedWalletBalance: Math.max(0, destWallet.currentBalance - firstSaving),
+                }
+              : null,
+        };
+        setMessages((prev) => [...prev, previewMsg]);
+      }
+      showToast(`Target "${plan.targetName}" ditambahkan`);
+    } catch {
+      showToast('Gagal menyimpan target tabungan', 'error');
+    } finally {
+      setProcessingMsgId(null);
+    }
+  };
+
+  const handleSelectPickerWallet = (msg: ChatMessage, walletName: string) => {
+    const data = msg.cardData;
+    if (
+      data?.intent === 'GOAL_CONTRIBUTE' &&
+      data.goalId &&
+      data.destinationWalletId &&
+      data.wallets
+    ) {
+      const sourceWallet = data.wallets.find((w) => w.name === walletName);
+      if (sourceWallet) {
+        const previewMsg: ChatMessage = {
+          id: `ai-plan-preview-${Date.now()}`,
+          sender: 'AI',
+          text: `Siap transfer Rp ${data.amount.toLocaleString('id-ID')} dari ${sourceWallet.name} ke ${data.destinationWalletName ?? 'dompet tabungan'} untuk "${data.note}". Tekan Konfirmasi untuk menyimpan.`,
+          timestamp: formatNowTime(),
+          richCard: 'TRANSACTION_PREVIEW',
+          actionStatus: 'PENDING',
+          cardData: {
+            intent: 'GOAL_CONTRIBUTE',
+            goalId: data.goalId,
+            type: 'TRANSFER',
+            amount: data.amount,
+            note: data.note,
+            walletId: sourceWallet.id,
+            walletName: sourceWallet.name,
+            destinationWalletId: data.destinationWalletId,
+            destinationWalletName: data.destinationWalletName,
+            currentWalletBalance: sourceWallet.currentBalance,
+            projectedWalletBalance: Math.max(0, sourceWallet.currentBalance - data.amount),
+          },
+        };
+        setMessages((prev) => [...prev, previewMsg]);
+        return;
+      }
+    }
+    void sendMessage(walletName);
+  };
+
   const handleConfirmAiAction = async (msg: ChatMessage) => {
     const data = msg.cardData;
     if (!data || processingMsgId) return;
     setProcessingMsgId(msg.id);
     try {
-      if (data.intent === 'GOAL_CONTRIBUTE' && data.goalId) {
-        const updatedGoal = await goalService.contributeGoal(data.goalId, data.amount);
+      if (data.intent === 'UPSERT_BUDGET' && (data.categoryId || data.categoryName)) {
+        const now = new Date();
+        await budgetService.upsertBudget({
+          categoryId: data.categoryId,
+          categoryName: data.categoryName,
+          month: now.getMonth() + 1,
+          year: now.getFullYear(),
+          period: data.period ?? 'MONTHLY',
+          limitAmount: data.amount,
+        });
         await refreshAllData();
         setMessages((prev) =>
           prev.map((m) =>
@@ -291,13 +450,90 @@ export default function AiChatbotScreen() {
                   actionStatus: 'CONFIRMED',
                   cardData: {
                     ...data,
-                    newWalletBalance: Number(updatedGoal.currentAmount),
+                    newWalletBalance: data.amount,
                   },
                 }
               : m
           )
         );
-        showToast('Setoran target tabungan berhasil dicatat');
+        showToast('Anggaran berhasil disimpan');
+        return;
+      }
+
+      if (data.intent === 'DELETE_BUDGET' && data.budgetId) {
+        await budgetService.deleteBudget(data.budgetId);
+        await refreshAllData();
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id
+              ? {
+                  ...m,
+                  richCard: 'TRANSACTION_CREATED',
+                  actionStatus: 'CONFIRMED',
+                  cardData: {
+                    ...data,
+                    newWalletBalance: 0,
+                  },
+                }
+              : m
+          )
+        );
+        showToast('Anggaran berhasil dihapus');
+        return;
+      }
+
+      if (data.intent === 'DELETE_GOAL' && data.goalId) {
+        await goalService.deleteGoal(data.goalId);
+        await refreshAllData();
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id
+              ? {
+                  ...m,
+                  richCard: 'TRANSACTION_CREATED',
+                  actionStatus: 'CONFIRMED',
+                  cardData: {
+                    ...data,
+                    newWalletBalance: 0,
+                  },
+                }
+              : m
+          )
+        );
+        showToast('Target tabungan berhasil dihapus');
+        return;
+      }
+
+      if (data.intent === 'GOAL_CONTRIBUTE' && data.goalId) {
+        const updatedGoal = await goalService.contributeGoal(data.goalId, data.amount, {
+          walletId: data.walletId,
+          destinationWalletId: data.destinationWalletId,
+          note: data.note,
+        });
+        await refreshAllData();
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msg.id
+              ? {
+                  ...m,
+                  richCard: 'TRANSACTION_CREATED',
+                  actionStatus: 'CONFIRMED',
+                  cardData: {
+                    ...data,
+                    newWalletBalance:
+                      data.type === 'TRANSFER'
+                        ? data.projectedWalletBalance ?? data.currentWalletBalance
+                        : Number(updatedGoal.currentAmount),
+                  },
+                }
+              : m
+          )
+        );
+        showToast(
+          data.type === 'TRANSFER'
+            ? 'Transfer & setoran target tabungan berhasil dicatat'
+            : 'Setoran target tabungan berhasil dicatat'
+        );
         return;
       }
 
@@ -414,7 +650,7 @@ export default function AiChatbotScreen() {
               <View style={styles.statusRow}>
                 <View style={styles.onlineDot} />
                 <Text style={styles.headerSubtitle} numberOfLines={1}>
-                  Online • Terhubung ke {wallets.length} Dompet
+                  Terhubung ke {wallets.length} Dompet
                 </Text>
               </View>
             </View>
@@ -483,7 +719,8 @@ export default function AiChatbotScreen() {
                       categories={categories}
                       onConfirmAction={() => void handleConfirmAiAction(msg)}
                       onCancelAction={() => void handleCancelAiAction(msg)}
-                      onSelectWallet={(walletName) => void sendMessage(walletName)}
+                      onSelectWallet={(walletName) => handleSelectPickerWallet(msg, walletName)}
+                      onSelectPlanWallet={(wallet) => void handleSelectPlanWallet(msg, wallet)}
                       onSelectCategory={(cat) => handleChangeAiCategory(msg.id, cat)}
                     />
                   ) : null}
@@ -533,7 +770,7 @@ export default function AiChatbotScreen() {
                 styles.textInput,
                 inputFocused && styles.textInputFocused,
               ]}
-              placeholder="Tanya soal keuanganmu..."
+              placeholder="Tanya soal keuanganmu"
               placeholderTextColor="#94A3B8"
               value={inputText}
               onChangeText={setInputText}

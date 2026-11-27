@@ -40,10 +40,74 @@ export interface AiWalletOption {
   sufficient: boolean;
 }
 
+export interface AiFinancialPlanData {
+  targetName: string;
+  targetAmount: number;
+  currentAmount: number;
+  remainingAmount: number;
+  durationMonths: number;
+  durationDays?: number;
+  durationLabel?: string;
+  requiredMonthlySaving: number;
+  requiredDailySaving?: number;
+  monthlyIncome: number;
+  monthlyExpense: number;
+  monthlyNetCashFlow: number;
+  requiredPercentageOfNet: number;
+  feasibility: 'realistic' | 'tight' | 'unlikely' | 'insufficient_data';
+  assumptions: string[];
+  relatedGoalId?: string | null;
+}
+
+export interface AiSpendingBreakdownData {
+  period: string;
+  totalExpense: number;
+  items: Array<{
+    category: string;
+    total: number;
+    percentage: number;
+  }>;
+}
+
+export interface AiSummaryCardData {
+  period: string;
+  income: number;
+  expense: number;
+  remaining: number;
+  totalBalance: number;
+  activeGoals: number;
+  sawScore: number | null;
+  sawStatus: string;
+  sawClassification: SawClassification;
+}
+
+export interface AiGoalCardItem {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  remainingAmount: number;
+  percentage: number;
+}
+
 export interface AiTransactionCardData {
-  intent?: 'CREATE_TRANSACTION' | 'TRANSFER' | 'GOAL_CONTRIBUTE' | 'FINANCIAL_ADVICE';
+  intent?:
+    | 'CREATE_TRANSACTION'
+    | 'TRANSFER'
+    | 'GOAL_CONTRIBUTE'
+    | 'DELETE_GOAL'
+    | 'UPSERT_BUDGET'
+    | 'SET_BUDGET'
+    | 'DELETE_BUDGET'
+    | 'RESET_BUDGET'
+    | 'FINANCIAL_ADVICE';
   transactionId?: string;
   goalId?: string;
+  budgetId?: string;
+  period?: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+  periodLabel?: string;
+  limitAmount?: number;
+  oldLimitAmount?: number;
   type: 'INCOME' | 'EXPENSE' | 'TRANSFER';
   amount: number;
   note: string;
@@ -57,6 +121,19 @@ export interface AiTransactionCardData {
   projectedWalletBalance?: number;
   newWalletBalance?: number;
   wallets?: AiWalletOption[];
+  totalBalance?: number;
+  plan?: AiFinancialPlanData;
+  spendingBreakdown?: AiSpendingBreakdownData;
+  summary?: AiSummaryCardData;
+  goals?: AiGoalCardItem[];
+  budgets?: Array<{
+    id: string;
+    category: { name: string };
+    limitAmount: number;
+    spentAmount: number;
+    percentage: number;
+    status: string;
+  }>;
 }
 
 export interface BackendForecastResponse {
@@ -121,7 +198,16 @@ export interface BackendAdvisorResponse {
 
 export interface BackendChatResponse {
   reply: string;
-  intent?: 'CREATE_TRANSACTION' | 'TRANSFER' | 'GOAL_CONTRIBUTE' | 'FINANCIAL_ADVICE';
+  intent?:
+    | 'CREATE_TRANSACTION'
+    | 'TRANSFER'
+    | 'GOAL_CONTRIBUTE'
+    | 'DELETE_GOAL'
+    | 'UPSERT_BUDGET'
+    | 'SET_BUDGET'
+    | 'DELETE_BUDGET'
+    | 'RESET_BUDGET'
+    | 'FINANCIAL_ADVICE';
   actionExecuted?: boolean;
   pendingConfirmation?: boolean;
   cardType:
@@ -129,6 +215,15 @@ export interface BackendChatResponse {
     | 'ANOMALY'
     | 'RECOMMENDATION'
     | 'BUDGET'
+    | 'BUDGET_SET'
+    | 'BUDGET_UPDATED'
+    | 'BUDGET_DELETED'
+    | 'BUDGET_RESET'
+    | 'SPENDING_BREAKDOWN'
+    | 'SUMMARY'
+    | 'GOAL'
+    | 'WALLET'
+    | 'FINANCIAL_PLAN'
     | 'WALLET_PICKER'
     | 'TRANSACTION_PREVIEW'
     | 'TRANSACTION_CREATED'

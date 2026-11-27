@@ -53,7 +53,7 @@ export function WalletCard({ wallet, isDefault, compact = false, onPress }: Wall
           <Text style={styles.subText} numberOfLines={1}>
             {[wallet.institution, wallet.accountLast4 ? `•••• ${wallet.accountLast4}` : null]
               .filter(Boolean)
-              .join(' · ') || labels.subLabel}
+              .join(', ') || labels.subLabel}
           </Text>
         </View>
 

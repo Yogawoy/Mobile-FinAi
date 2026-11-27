@@ -138,9 +138,24 @@ export function GoalFormSheet({
 
   const handleSave = () => {
     if (isContributeMode && contributingGoal) {
+      const remaining = Math.max(0, contributingGoal.target - contributingGoal.current);
+      if (remaining <= 0) {
+        showToast('Target tabungan ini sudah tercapai 100%', 'error');
+        return;
+      }
+
       const amount = Number(contributeText.replace(/[^0-9]/g, ''));
       if (!Number.isFinite(amount) || amount <= 0) {
         showToast('Masukkan nominal tabungan lebih dari 0', 'error');
+        return;
+      }
+
+      if (amount > remaining) {
+        setContributeText(formatThousands(String(remaining)));
+        showToast(
+          `Maksimal setoran sesuai sisa target (${formatIDR(remaining)})`,
+          'error'
+        );
         return;
       }
 

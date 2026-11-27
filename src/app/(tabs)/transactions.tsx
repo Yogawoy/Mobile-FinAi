@@ -130,7 +130,7 @@ export default function TransactionsTabScreen() {
   const groupedSections = useMemo(() => {
     const map = new Map<string, TransactionItem[]>();
     for (const tx of filteredTransactions) {
-      const group = tx.dateGroup || 'Hari Ini • 22 Nov 2026';
+      const group = tx.dateGroup || 'Hari Ini, 22 Nov 2026';
       const list = map.get(group);
       if (list) list.push(tx);
       else map.set(group, [tx]);
@@ -208,7 +208,7 @@ export default function TransactionsTabScreen() {
       walletName: sourceWallet?.name || 'Dompet',
       targetWalletId: isTransfer ? payload.targetWalletId : undefined,
       targetWalletName: isTransfer ? targetWallet?.name : undefined,
-      dateGroup: 'Hari Ini • 22 Nov 2026',
+      dateGroup: 'Hari Ini, 22 Nov 2026',
       dateLabel: `${hh}:${mm}`,
       amount: payload.amount,
       type: payload.mode,
@@ -306,7 +306,7 @@ export default function TransactionsTabScreen() {
             <Search size={18} color={Colors.textMuted} strokeWidth={1.85} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Cari catatan, kategori, atau dompet..."
+              placeholder="Cari catatan, kategori, atau dompet"
               placeholderTextColor="#94A3B8"
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -455,7 +455,7 @@ export default function TransactionsTabScreen() {
                     const subText =
                       isTransfer && tx.targetWalletName
                         ? `${tx.walletName} → ${tx.targetWalletName}`
-                        : `${tx.walletName} • ${tx.categoryLabel}`;
+                        : `${tx.walletName}, ${tx.categoryLabel}`;
 
                     return (
                       <Pressable

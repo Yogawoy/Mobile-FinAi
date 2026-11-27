@@ -61,7 +61,7 @@ export function TransactionDetailSheet({
       : transaction.walletName;
 
   const dateDisplay = transaction.dateGroup
-    ? `${transaction.dateGroup} • ${transaction.dateLabel}`
+    ? `${transaction.dateGroup}, ${transaction.dateLabel}`
     : transaction.dateLabel;
 
   return (

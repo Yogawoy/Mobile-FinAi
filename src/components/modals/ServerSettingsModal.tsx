@@ -76,7 +76,7 @@ export function ServerSettingsModal({ visible, onClose, onUpdated }: ServerSetti
             style={styles.input}
             value={url}
             onChangeText={setUrl}
-            placeholder="https://..."
+            placeholder="https://api.finai.app"
             autoCapitalize="none"
             autoCorrect={false}
           />

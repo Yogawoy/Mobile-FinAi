@@ -34,6 +34,7 @@ export interface QuickTransactionSubmitPayload {
 interface QuickTransactionSheetProps {
   visible: boolean;
   initialMode: TransactionMode;
+  initialCategoryKey?: string;
   wallets: WalletItem[];
   editingTransaction?: TransactionItem | null;
   onClose: () => void;
@@ -49,6 +50,7 @@ function formatThousands(raw: string): string {
 export function QuickTransactionSheet({
   visible,
   initialMode,
+  initialCategoryKey,
   wallets,
   editingTransaction,
   onClose,
@@ -84,9 +86,11 @@ export function QuickTransactionSheet({
     setAmountText('');
     setWalletId(wallets[0]?.id || 'bca');
     setTargetWalletId(wallets[1]?.id || wallets[0]?.id || 'gopay');
-    setCategoryKey(initialMode === 'INCOME' ? 'briefcase' : 'utensils');
+    setCategoryKey(
+      initialCategoryKey ?? (initialMode === 'INCOME' ? 'briefcase' : 'utensils')
+    );
     setNote('');
-  }, [visible, initialMode, wallets, editingTransaction]);
+  }, [visible, initialMode, initialCategoryKey, wallets, editingTransaction]);
 
   const categories: CategoryOption[] = React.useMemo(() => {
     const targetType = mode === 'INCOME' ? 'INCOME' : 'EXPENSE';

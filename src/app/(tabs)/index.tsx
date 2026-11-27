@@ -293,7 +293,7 @@ export default function HomeTabScreen() {
       status: sawHealth.statusLabel,
       toneColor: tone.color,
       toneBg: tone.bg,
-      insight: `Klasifikasi ${sawHealth.classification} • Ketuk untuk lihat 4 kriteria SAW & proyeksi.`,
+      insight: 'Ketuk untuk lihat analisis & proyeksi',
     };
   }, [sawHealth, transactions.length]);
 
@@ -872,8 +872,8 @@ export default function HomeTabScreen() {
                       </Text>
                       <Text style={styles.txMeta} numberOfLines={1}>
                         {isTransfer && tx.targetWalletName
-                          ? `${tx.walletName} → ${tx.targetWalletName} · ${tx.dateLabel}`
-                          : `${tx.walletName} · ${tx.dateLabel}`}
+                          ? `${tx.walletName} ke ${tx.targetWalletName}, ${tx.dateLabel}`
+                          : `${tx.walletName}, ${tx.dateLabel}`}
                       </Text>
                     </View>
 

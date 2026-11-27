@@ -117,7 +117,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Makanan',
     walletId: 'gopay',
     walletName: 'GoPay',
-    dateGroup: 'Hari Ini • 22 Nov 2026',
+    dateGroup: 'Hari Ini, 22 Nov 2026',
     dateLabel: '12:30',
     amount: 45_000,
     type: 'EXPENSE',
@@ -134,7 +134,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     walletName: 'Bank BCA',
     targetWalletId: 'gopay',
     targetWalletName: 'GoPay',
-    dateGroup: 'Hari Ini • 22 Nov 2026',
+    dateGroup: 'Hari Ini, 22 Nov 2026',
     dateLabel: '09:15',
     amount: 300_000,
     type: 'TRANSFER',
@@ -149,7 +149,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Harian',
     walletId: 'cash',
     walletName: 'Uang Tunai',
-    dateGroup: 'Hari Ini • 22 Nov 2026',
+    dateGroup: 'Hari Ini, 22 Nov 2026',
     dateLabel: '08:10',
     amount: 22_000,
     type: 'EXPENSE',
@@ -164,7 +164,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Gaji / Proyek',
     walletId: 'bca',
     walletName: 'Bank BCA',
-    dateGroup: 'Kemarin • 21 Nov 2026',
+    dateGroup: 'Kemarin, 21 Nov 2026',
     dateLabel: '17:15',
     amount: 2_500_000,
     type: 'INCOME',
@@ -179,7 +179,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Transportasi',
     walletId: 'gopay',
     walletName: 'GoPay',
-    dateGroup: 'Kemarin • 21 Nov 2026',
+    dateGroup: 'Kemarin, 21 Nov 2026',
     dateLabel: '14:20',
     amount: 28_000,
     type: 'EXPENSE',
@@ -194,7 +194,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Belanja',
     walletId: 'mandiri',
     walletName: 'Tabungan Mandiri',
-    dateGroup: 'Kemarin • 21 Nov 2026',
+    dateGroup: 'Kemarin, 21 Nov 2026',
     dateLabel: '11:05',
     amount: 320_000,
     type: 'EXPENSE',
@@ -341,6 +341,8 @@ export const INCOME_CATEGORIES: CategoryOption[] = [
 
 export type BudgetIconKey = 'utensils' | 'cloud' | 'car' | 'shopping' | 'gamepad';
 
+export type BudgetPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
+
 export interface BudgetItem {
   id: string;
   name: string;
@@ -348,6 +350,9 @@ export interface BudgetItem {
   spent: number;
   limit: number;
   alertThresholdPct: number;
+  period?: BudgetPeriod;
+  periodLabel?: string;
+  monthlyEquivalentLimit?: number;
 }
 
 export const BUDGET_CATEGORY_OPTIONS: { key: BudgetIconKey; label: string }[] = [

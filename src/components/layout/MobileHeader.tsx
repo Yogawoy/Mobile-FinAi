@@ -19,7 +19,7 @@ export function MobileHeader({ isHome = false, title = 'Beranda' }: MobileHeader
   };
 
   const handleProfilePress = () => {
-    showToast('Yoga Saputra · FinAI');
+    showToast('Yoga Saputra, FinAI');
   };
 
   return (

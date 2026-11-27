@@ -180,7 +180,7 @@ export function InteractiveForecastChart({
           {activeMilestone.title}
         </Text>
         <Text style={[styles.readoutValue, Typography.tabularNums]} numberOfLines={1}>
-          {formatIDR(activeMilestone.amount)} ·{' '}
+          {formatIDR(activeMilestone.amount)},{' '}
           <Text
             style={{
               color: diffFromBudget >= 0 ? Colors.incomeText : Colors.expense,

@@ -15,7 +15,7 @@ import {
   type SawHealthResult,
 } from '@/services/ai.service';
 import { authService, type BackendUser } from '@/services/auth.service';
-import { budgetService, type BackendBudget } from '@/services/budget.service';
+import { budgetService, type BackendBudget, type BackendBudgetSummary } from '@/services/budget.service';
 import { categoryService, type BackendCategory } from '@/services/category.service';
 import { goalService, type BackendGoal } from '@/services/goal.service';
 import {
@@ -41,7 +41,6 @@ import React, {
   useMemo,
   useState,
 } from 'react';
-
 export type BudgetRuleKey = '50_30_20' | '60_20_20' | '70_20_10';
 
 export type FinancialChallengeKey =
@@ -159,6 +158,7 @@ interface FinanceContextValue {
   userProfile: UserProfileState;
   wallets: WalletItem[];
   budgets: BudgetItem[];
+  budgetMonthlySummary: BackendBudgetSummary | null;
   transactions: TransactionItem[];
   goals: GoalItem[];
   categories: ManagedCategory[];
@@ -285,7 +285,7 @@ function formatDateGroupLabel(iso: string): string {
     year: 'numeric',
   });
 
-  if (isToday) return `Hari Ini • ${formatted}`;
+  if (isToday) return `Hari Ini, ${formatted}`;
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -294,7 +294,7 @@ function formatDateGroupLabel(iso: string): string {
     d.getMonth() === yesterday.getMonth() &&
     d.getFullYear() === yesterday.getFullYear();
 
-  if (isYesterday) return `Kemarin • ${formatted}`;
+  if (isYesterday) return `Kemarin, ${formatted}`;
   return formatted;
 }
 
@@ -383,6 +383,9 @@ function mapBudget(b: BackendBudget): BudgetItem {
     spent: Number(b.spentAmount),
     iconKey: toBudgetIconKey(b.category.icon),
     alertThresholdPct: b.alertThresholdPct ?? 80,
+    period: b.period ?? 'MONTHLY',
+    periodLabel: b.periodLabel,
+    monthlyEquivalentLimit: b.monthlyEquivalentLimit,
   };
 }
 
@@ -464,6 +467,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [userProfile, setUserProfile] = useState<UserProfileState>(DEFAULT_PROFILE);
   const [wallets, setWallets] = useState<WalletItem[]>([]);
   const [budgets, setBudgets] = useState<BudgetItem[]>([]);
+  const [budgetMonthlySummary, setBudgetMonthlySummary] =
+    useState<BackendBudgetSummary | null>(null);
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [goals, setGoals] = useState<GoalItem[]>([]);
   const [categories, setCategories] = useState<ManagedCategory[]>([]);
@@ -490,6 +495,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setHasCompletedSetup(false);
     setWallets([]);
     setBudgets([]);
+    setBudgetMonthlySummary(null);
     setTransactions([]);
     setGoals([]);
     setCategories([]);
@@ -557,7 +563,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (budgetsRes.status === 'fulfilled') {
-        setBudgets(budgetsRes.value.map(mapBudget));
+        setBudgets(budgetsRes.value.items.map(mapBudget));
+        setBudgetMonthlySummary(budgetsRes.value.summary);
       }
 
       if (goalsRes.status === 'fulfilled') {
@@ -883,6 +890,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         userProfile,
         wallets,
         budgets,
+        budgetMonthlySummary,
         transactions,
         goals,
         categories,

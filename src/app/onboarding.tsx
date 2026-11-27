@@ -142,7 +142,7 @@ function Slide1Stage() {
           <Text style={[styles.bottomBalanceTitle, Typography.tabularNums]}>
             Total Saldo Rp 4,85jt
           </Text>
-          <Text style={styles.bottomBalanceSub}>BCA • GoPay • Tunai</Text>
+          <Text style={styles.bottomBalanceSub}>BCA, GoPay, Tunai</Text>
         </View>
         <View style={styles.slide1RightGroup}>
           <View style={styles.softBluePctPill}>

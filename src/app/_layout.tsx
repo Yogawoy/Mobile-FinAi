@@ -79,6 +79,8 @@ export default function RootLayout() {
             <Stack.Screen name="recurring" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="categories" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="forecast" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="budget/[id]" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="goal/[id]" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
           </Stack>
           {!splashFinished ? (

@@ -691,7 +691,7 @@ export default function SetupWizardScreen() {
         if (parsed.step && [1, 2, 3, 4].includes(parsed.step)) {
           setStep(parsed.step);
         }
-        showToast('Melanjutkan pengaturan akunmu...');
+        showToast('Melanjutkan pengaturan akun');
       })
       .catch(() => {})
       .finally(() => {
@@ -1322,7 +1322,7 @@ export default function SetupWizardScreen() {
                   <View style={styles.blueprintStatusPill}>
                     <CheckCircle2 size={14} color="#10B981" strokeWidth={2.3} />
                     <Text style={styles.blueprintStatusText}>
-                      Blueprint Aktif • Pola {ruleMeta.label}
+                      Pola {ruleMeta.label} Aktif
                     </Text>
                   </View>
                 </View>

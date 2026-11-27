@@ -127,7 +127,7 @@ export function WalletDetailSheet({
             </View>
           </View>
           <Text style={styles.metaText}>
-            {theme.subLabel} · {wallet.last4}
+            {theme.subLabel}, {wallet.last4}
           </Text>
         </View>
 
@@ -155,7 +155,7 @@ export function WalletDetailSheet({
                       {tx.title}
                     </Text>
                     <Text style={styles.txMeta} numberOfLines={1}>
-                      {tx.categoryLabel} · {tx.dateGroup || tx.dateLabel}
+                      {tx.categoryLabel}, {tx.dateGroup || tx.dateLabel}
                     </Text>
                   </View>
                   <Text

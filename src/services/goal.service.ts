@@ -51,10 +51,25 @@ export const goalService = {
     });
   },
 
-  contributeGoal(id: string, amount: number) {
+  contributeGoal(
+    id: string,
+    amount: number,
+    options?: {
+      walletId?: string | null;
+      destinationWalletId?: string | null;
+      note?: string;
+    }
+  ) {
     return apiRequest<BackendGoal>(`/goals/${id}/contribute`, {
       method: 'PATCH',
-      body: { amount },
+      body: {
+        amount,
+        ...(options?.walletId ? { walletId: options.walletId } : {}),
+        ...(options?.destinationWalletId
+          ? { destinationWalletId: options.destinationWalletId }
+          : {}),
+        ...(options?.note ? { note: options.note } : {}),
+      },
     });
   },
 
