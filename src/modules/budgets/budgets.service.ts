@@ -9,7 +9,7 @@ import {
 } from '../../utils/budgetWindow';
 import { logAudit } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
-import type { UpsertBudgetInput } from './budgets.schema';
+import type { UpdateBudgetInput, UpsertBudgetInput } from './budgets.schema';
 
 export function getMonthDateRange(month: number, year: number) {
   return getMonthDateRangeWib(month, year);
@@ -112,6 +112,7 @@ export async function listBudgets(
     return {
       id: b.id,
       userId: b.userId,
+      name: b.name ?? null,
       categoryId: b.categoryId,
       category: b.category,
       month: b.month,
@@ -253,6 +254,7 @@ export async function upsertBudget(
   }
 
   const period = input.period ?? BudgetPeriod.MONTHLY;
+  const cleanName = input.name?.trim() ? input.name.trim() : null;
 
   const budget = await prisma.budget.upsert({
     where: {
@@ -264,6 +266,7 @@ export async function upsertBudget(
       },
     },
     update: {
+      ...(input.name !== undefined ? { name: cleanName } : {}),
       limitAmount,
       alertThresholdPct,
       period,
@@ -271,6 +274,7 @@ export async function upsertBudget(
     create: {
       userId,
       categoryId,
+      name: cleanName,
       month: input.month,
       year: input.year,
       period,
@@ -285,14 +289,136 @@ export async function upsertBudget(
     action: 'BUDGET_UPSERT',
     entityType: 'BUDGET',
     entityId: budget.id,
-    metadata: { categoryId, month: input.month, year: input.year, period, limitAmount },
+    metadata: {
+      name: cleanName,
+      categoryId,
+      month: input.month,
+      year: input.year,
+      period,
+      limitAmount,
+    },
     ipAddress,
   });
 
   return {
     ...budget,
+    name: budget.name ?? null,
     periodLabel: getBudgetPeriodLabel(budget.period),
     limitAmount: Number(budget.limitAmount),
+  };
+}
+
+export async function getBudgetById(userId: string, budgetId: string) {
+  const b = await prisma.budget.findFirst({
+    where: { id: budgetId, userId },
+    include: { category: true },
+  });
+  if (!b) {
+    throw new AppError('Anggaran tidak ditemukan', 404);
+  }
+
+  const daysInMonth = getDaysInMonth(b.month, b.year);
+  const { start, end, isArchivedMonth } = getBudgetDateRange(b.period, b.month, b.year);
+  const effectiveStart = b.resetAt && b.resetAt > start ? b.resetAt : start;
+  const agg = await prisma.transaction.aggregate({
+    where: {
+      userId,
+      categoryId: b.categoryId,
+      type: TransactionType.EXPENSE,
+      transactionDate: { gte: effectiveStart, lt: end },
+    },
+    _sum: { amount: true },
+  });
+
+  const rawLimit = Number(b.limitAmount);
+  const monthlyEquivalentLimit = toMonthlyEquivalent(rawLimit, b.period, daysInMonth);
+  const limitAmount = isArchivedMonth ? monthlyEquivalentLimit : rawLimit;
+  const spentAmount = Number(agg._sum.amount ?? 0);
+  const remainingAmount = limitAmount - spentAmount;
+  const percentage =
+    limitAmount > 0 ? Math.round((spentAmount / limitAmount) * 1000) / 10 : 0;
+
+  let status: 'SAFE' | 'WARNING' | 'OVER_BUDGET' = 'SAFE';
+  if (percentage > 100) {
+    status = 'OVER_BUDGET';
+  } else if (percentage >= b.alertThresholdPct) {
+    status = 'WARNING';
+  }
+
+  return {
+    id: b.id,
+    userId: b.userId,
+    name: b.name ?? null,
+    categoryId: b.categoryId,
+    category: b.category,
+    month: b.month,
+    year: b.year,
+    period: b.period,
+    periodLabel: isArchivedMonth ? 'Bulan Ini' : getBudgetPeriodLabel(b.period),
+    limitAmount,
+    monthlyEquivalentLimit,
+    spentAmount,
+    remainingAmount,
+    percentage,
+    alertThresholdPct: b.alertThresholdPct,
+    status,
+    createdAt: b.createdAt,
+    updatedAt: b.updatedAt,
+  };
+}
+
+export async function updateBudget(
+  userId: string,
+  budgetId: string,
+  input: UpdateBudgetInput,
+  ipAddress?: string | null
+) {
+  const existing = await prisma.budget.findFirst({
+    where: { id: budgetId, userId },
+  });
+  if (!existing) {
+    throw new AppError('Anggaran tidak ditemukan', 404);
+  }
+
+  const limitAmount = input.limitAmount ?? input.limit_amount;
+  const alertThresholdPct =
+    input.alertThresholdPct ?? input.alert_threshold_pct;
+  const cleanName =
+    input.name !== undefined
+      ? input.name?.trim()
+        ? input.name.trim()
+        : null
+      : undefined;
+
+  const updated = await prisma.budget.update({
+    where: { id: budgetId },
+    data: {
+      ...(cleanName !== undefined ? { name: cleanName } : {}),
+      ...(input.period !== undefined ? { period: input.period } : {}),
+      ...(limitAmount !== undefined ? { limitAmount } : {}),
+      ...(alertThresholdPct !== undefined ? { alertThresholdPct } : {}),
+    },
+    include: { category: true },
+  });
+
+  await logAudit({
+    userId,
+    action: 'BUDGET_UPDATE',
+    entityType: 'BUDGET',
+    entityId: budgetId,
+    metadata: {
+      name: updated.name ?? null,
+      period: updated.period,
+      limitAmount: Number(updated.limitAmount),
+    },
+    ipAddress,
+  });
+
+  return {
+    ...updated,
+    name: updated.name ?? null,
+    periodLabel: getBudgetPeriodLabel(updated.period),
+    limitAmount: Number(updated.limitAmount),
   };
 }
 

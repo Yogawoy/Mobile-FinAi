@@ -232,6 +232,7 @@ model Budget {
   id                String       @id @default(uuid())
   userId            String       @map("user_id")
   categoryId        String       @map("category_id")
+  name              String?
   month             Int
   year              Int
   period            BudgetPeriod @default(MONTHLY)

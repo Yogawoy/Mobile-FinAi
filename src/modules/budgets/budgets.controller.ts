@@ -2,7 +2,7 @@ import { BudgetPeriod } from '@prisma/client';
 import type { Request, Response } from 'express';
 import { getWibNow } from '../../utils/budgetWindow';
 import { sendSuccess } from '../../utils/response';
-import type { UpsertBudgetInput } from './budgets.schema';
+import type { UpdateBudgetInput, UpsertBudgetInput } from './budgets.schema';
 import * as budgetsService from './budgets.service';
 
 export async function listBudgetsHandler(req: Request, res: Response) {
@@ -26,6 +26,14 @@ export async function listBudgetsHandler(req: Request, res: Response) {
   return sendSuccess(res, 'Daftar anggaran berhasil diambil', data);
 }
 
+export async function getBudgetByIdHandler(req: Request, res: Response) {
+  const budget = await budgetsService.getBudgetById(
+    req.user!.userId,
+    String(req.params.id)
+  );
+  return sendSuccess(res, 'Detail anggaran berhasil diambil', budget);
+}
+
 export async function upsertBudgetHandler(req: Request, res: Response) {
   const budget = await budgetsService.upsertBudget(
     req.user!.userId,
@@ -33,6 +41,16 @@ export async function upsertBudgetHandler(req: Request, res: Response) {
     req.ip ?? null
   );
   return sendSuccess(res, 'Anggaran berhasil disimpan', budget, 201);
+}
+
+export async function updateBudgetHandler(req: Request, res: Response) {
+  const budget = await budgetsService.updateBudget(
+    req.user!.userId,
+    String(req.params.id),
+    req.body as UpdateBudgetInput,
+    req.ip ?? null
+  );
+  return sendSuccess(res, 'Anggaran berhasil diperbarui', budget);
 }
 
 export async function deleteBudgetHandler(req: Request, res: Response) {

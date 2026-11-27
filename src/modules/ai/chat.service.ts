@@ -4,7 +4,7 @@ import { callGemini } from '../../config/gemini';
 import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
 import { deleteBudget, listBudgets, upsertBudget } from '../budgets/budgets.service';
-import { contributeGoal } from '../goals/goals.service';
+import { contributeGoal, createGoal } from '../goals/goals.service';
 import { createTransaction } from '../transactions/transactions.service';
 import { buildChatSystemInstruction } from './ai.prompts';
 import { computeAndSaveForecast } from './forecast.service';
@@ -37,6 +37,7 @@ export type ChatCardType =
 export type ChatIntentType =
   | 'CREATE_TRANSACTION'
   | 'TRANSFER'
+  | 'CREATE_GOAL'
   | 'GOAL_CONTRIBUTE'
   | 'DELETE_GOAL'
   | 'UPSERT_BUDGET'
@@ -44,6 +45,49 @@ export type ChatIntentType =
   | 'DELETE_BUDGET'
   | 'RESET_BUDGET'
   | 'FINANCIAL_ADVICE';
+
+export interface ChatActionCard {
+  type: 'ACTION_CARD';
+  badge: string;
+  accent: 'blue' | 'green' | 'red' | 'amber';
+  title: string;
+  amount: number;
+  rows: Array<{ label: string; value: string }>;
+  detailRoute?: { type: 'transaction' | 'budget' | 'goal'; id: string };
+}
+
+export interface ChatSummaryCard {
+  type: 'SUMMARY_CARD';
+  title: string;
+  metrics: Array<{
+    label: string;
+    value: string;
+    tone?: 'default' | 'green' | 'red' | 'blue';
+  }>;
+  items?: Array<{
+    id?: string;
+    label: string;
+    value: string;
+    status?: string;
+    periodLabel?: 'Harian' | 'Mingguan' | 'Bulanan';
+    usableText?: string;
+    usageText?: string;
+    tone?: 'green' | 'amber' | 'red';
+    isExceeded?: boolean;
+  }>;
+  tip?: string;
+}
+
+export interface ChatChoiceCard {
+  type: 'CHOICE_CARD';
+  title: string;
+  options: Array<{ label: string; sublabel?: string; messageToSend: string }>;
+}
+
+export type ChatStructuredCard =
+  | ChatActionCard
+  | ChatSummaryCard
+  | ChatChoiceCard;
 
 export interface ChatHistoryTurn {
   role: 'user' | 'assistant' | 'model';
@@ -58,6 +102,7 @@ export interface ChatResponsePayload {
   pendingConfirmation: boolean;
   cardType: ChatCardType;
   cardData: Record<string, unknown> | null;
+  card?: ChatStructuredCard | null;
 }
 
 const actionPayloadSchema = z.object({
@@ -69,12 +114,34 @@ const actionPayloadSchema = z.object({
   budgetId: z.string().trim().nullable().optional(),
   alertThresholdPct: z.coerce.number().int().min(1).max(100).optional(),
   note: z.string().trim().max(255).optional().default(''),
+  goalName: z.string().trim().max(80).nullable().optional(),
+  deadlineDays: z.coerce.number().int().positive().max(3650).nullable().optional(),
+  deadlineMonths: z.coerce.number().int().positive().max(240).nullable().optional(),
   walletId: z.string().trim().optional().nullable(),
   destinationWalletId: z.string().trim().optional().nullable(),
   sourceType: z.enum(['WALLET', 'EXTERNAL']).optional().nullable(),
   categoryId: z.string().trim().optional().nullable(),
   goalId: z.string().trim().optional().nullable(),
 });
+
+function sanitizeReplyText(raw: string): string {
+  return raw
+    .replace(/\*\*/g, '')
+    .replace(/[\u2022\u00B7]/g, '')
+    .replace(/\u2014/g, '-')
+    .replace(/\.{3}|\u2026/g, '')
+    .replace(/\s*\n+\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function formatShortIdDate(date: Date): string {
+  return date.toLocaleDateString('id-ID', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+}
 
 function stripJsonFences(raw: string): string {
   return raw
@@ -450,7 +517,433 @@ function parseDeterministicIntent(
   };
 }
 
+type BudgetSummaryRow = {
+  id?: string;
+  name?: string | null;
+  category?: { name?: string };
+  period?: string;
+  limitAmount?: number;
+  spentAmount?: number;
+  remainingAmount?: number;
+  percentage?: number;
+  alertThresholdPct?: number;
+};
+
+function buildBudgetSummaryCard(list: BudgetSummaryRow[]): ChatSummaryCard {
+  const periodOrder: Record<string, number> = {
+    DAILY: 0,
+    WEEKLY: 1,
+    MONTHLY: 2,
+  };
+  const sorted = [...list].sort(
+    (a, b) => (periodOrder[a.period ?? 'MONTHLY'] ?? 2) - (periodOrder[b.period ?? 'MONTHLY'] ?? 2)
+  );
+
+  let totalRemaining = 0;
+  let totalSpent = 0;
+  let totalLimit = 0;
+  let exceededCount = 0;
+  const amberNames: string[] = [];
+
+  const items = sorted.map((b) => {
+    const limit = Number(b.limitAmount ?? 0);
+    const spent = Number(b.spentAmount ?? 0);
+    const remaining = Math.max(0, limit - spent);
+    const exceeded = Math.max(0, spent - limit);
+    const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
+    const alertThreshold = Number(b.alertThresholdPct ?? 80);
+    const periodLabel: 'Harian' | 'Mingguan' | 'Bulanan' =
+      b.period === 'DAILY'
+        ? 'Harian'
+        : b.period === 'WEEKLY'
+          ? 'Mingguan'
+          : 'Bulanan';
+    const isExceeded = exceeded > 0;
+    const tone: 'green' | 'amber' | 'red' = isExceeded
+      ? 'red'
+      : pct >= alertThreshold
+        ? 'amber'
+        : 'green';
+
+    totalRemaining += remaining;
+    totalSpent += spent;
+    totalLimit += limit;
+    if (isExceeded) exceededCount += 1;
+    if (tone === 'amber' && b.category?.name) {
+      amberNames.push(b.category.name);
+    }
+
+    return {
+      id: b.id,
+      label: b.name?.trim() || b.category?.name || 'Kategori',
+      value: `Rp ${spent.toLocaleString('id-ID')} / Rp ${limit.toLocaleString('id-ID')}`,
+      status: `${pct}%`,
+      periodLabel,
+      usableText: isExceeded
+        ? `Lewat Rp ${exceeded.toLocaleString('id-ID')}`
+        : `Rp ${remaining.toLocaleString('id-ID')}`,
+      usageText: `Terpakai Rp ${spent.toLocaleString('id-ID')} dari Rp ${limit.toLocaleString('id-ID')}`,
+      tone,
+      isExceeded,
+    };
+  });
+
+  const tip =
+    exceededCount > 0
+      ? `Ada ${exceededCount} anggaran yang melewati batas, tahan pengeluaran di kategori tersebut.`
+      : amberNames.length > 0
+        ? `Anggaran ${amberNames[0]} sudah mendekati batas, gunakan sisa dana dengan hemat.`
+        : `Semua anggaran masih aman, total sisa yang bisa dipakai Rp ${totalRemaining.toLocaleString('id-ID')}.`;
+
+  return {
+    type: 'SUMMARY_CARD',
+    title: 'Sisa Anggaran Aktif',
+    metrics: [
+      {
+        label: 'Masih Bisa Dipakai',
+        value: `Rp ${totalRemaining.toLocaleString('id-ID')}`,
+        tone: totalRemaining > 0 ? 'green' : 'red',
+      },
+      {
+        label: 'Sudah Terpakai',
+        value: `Rp ${totalSpent.toLocaleString('id-ID')}`,
+        tone: totalSpent > totalLimit ? 'red' : 'blue',
+      },
+    ],
+    items,
+    tip,
+  };
+}
+
+function buildBudgetCheckResponse(list: BudgetSummaryRow[]): ChatResponsePayload {
+  if (list.length === 0) {
+    return {
+      reply: 'Kamu belum punya anggaran aktif. Mau buat sekarang?',
+      intent: 'FINANCIAL_ADVICE',
+      actionExecuted: false,
+      pendingConfirmation: false,
+      cardType: null,
+      cardData: null,
+      card: {
+        type: 'CHOICE_CARD',
+        title: 'Pilih anggaran cepat',
+        options: [
+          {
+            label: 'Makan 50rb per hari',
+            messageToSend: 'Buat anggaran makan 50rb per hari',
+          },
+          {
+            label: 'Transport 200rb per minggu',
+            messageToSend: 'Buat anggaran transport 200rb per minggu',
+          },
+          {
+            label: 'Belanja 1jt per bulan',
+            messageToSend: 'Buat anggaran belanja 1jt per bulan',
+          },
+        ],
+      },
+    };
+  }
+
+  return {
+    reply: 'Ini sisa anggaran yang masih bisa kamu pakai:',
+    intent: 'FINANCIAL_ADVICE',
+    actionExecuted: false,
+    pendingConfirmation: false,
+    cardType: 'BUDGET',
+    cardData: { budgets: list },
+    card: buildBudgetSummaryCard(list),
+  };
+}
+
+function buildStructuredCard(res: ChatResponsePayload): ChatStructuredCard | null {
+  if (res.card) return res.card;
+  const data = (res.cardData ?? {}) as Record<string, unknown>;
+
+  if (res.cardType === 'WALLET_PICKER' && Array.isArray(data.wallets)) {
+    const options = (
+      data.wallets as Array<{ name?: string; currentBalance?: number }>
+    )
+      .filter((w) => typeof w.name === 'string' && w.name.length > 0)
+      .slice(0, 6)
+      .map((w) => ({
+        label: w.name!,
+        sublabel:
+          typeof w.currentBalance === 'number'
+            ? `Rp ${w.currentBalance.toLocaleString('id-ID')}`
+            : undefined,
+        messageToSend: w.name!,
+      }));
+    if (options.length > 0) {
+      return {
+        type: 'CHOICE_CARD',
+        title: 'Pilih dompet yang mau dipakai',
+        options,
+      };
+    }
+  }
+
+  if (res.cardType === 'BUDGET_SET' || res.cardType === 'BUDGET_UPDATED') {
+    const amount = Number(data.limitAmount ?? data.amount ?? 0);
+    const catName = String(data.categoryName ?? 'Anggaran');
+    const periodLabel = String(data.periodLabel ?? 'Bulan ini');
+    const budgetId = typeof data.budgetId === 'string' ? data.budgetId : undefined;
+    return {
+      type: 'ACTION_CARD',
+      badge:
+        res.cardType === 'BUDGET_UPDATED'
+          ? 'Anggaran Diperbarui'
+          : 'Anggaran Disimpan',
+      accent: 'blue',
+      title: catName,
+      amount,
+      rows: [
+        { label: 'Kategori', value: catName },
+        { label: 'Periode', value: periodLabel },
+      ],
+      detailRoute: budgetId ? { type: 'budget', id: budgetId } : undefined,
+    };
+  }
+
+  if (res.cardType === 'BUDGET_DELETED') {
+    const amount = Number(data.limitAmount ?? data.amount ?? 0);
+    const catName = String(data.categoryName ?? 'Anggaran');
+    return {
+      type: 'ACTION_CARD',
+      badge: 'Anggaran Dihapus',
+      accent: 'red',
+      title: catName,
+      amount,
+      rows: [{ label: 'Kategori', value: catName }],
+    };
+  }
+
+  if (res.cardType === 'TRANSACTION_CREATED') {
+    const amount = Number(data.amount ?? 0);
+    const txType = String(data.type ?? 'EXPENSE');
+    const note = String(data.note ?? '');
+    const catName = String(data.categoryName ?? 'Lainnya');
+    const walletName = String(data.walletName ?? '');
+    const destName = data.destinationWalletName
+      ? String(data.destinationWalletName)
+      : '';
+    const txId =
+      typeof data.transactionId === 'string' ? data.transactionId : undefined;
+    const goalId = typeof data.goalId === 'string' ? data.goalId : undefined;
+
+    if (res.intent === 'GOAL_CONTRIBUTE') {
+      return {
+        type: 'ACTION_CARD',
+        badge: 'Setoran Tabungan',
+        accent: 'green',
+        title: note || 'Setoran Target',
+        amount,
+        rows: [
+          ...(walletName ? [{ label: 'Dompet', value: walletName }] : []),
+          ...(destName ? [{ label: 'Tujuan', value: destName }] : []),
+        ].slice(0, 3),
+        detailRoute: goalId ? { type: 'goal', id: goalId } : undefined,
+      };
+    }
+
+    if (txType === 'TRANSFER') {
+      return {
+        type: 'ACTION_CARD',
+        badge: 'Transfer Berhasil',
+        accent: 'blue',
+        title: note || 'Transfer Antar Dompet',
+        amount,
+        rows: [
+          ...(walletName ? [{ label: 'Dari', value: walletName }] : []),
+          ...(destName ? [{ label: 'Ke', value: destName }] : []),
+        ].slice(0, 3),
+        detailRoute: txId ? { type: 'transaction', id: txId } : undefined,
+      };
+    }
+
+    const isIncome = txType === 'INCOME';
+    return {
+      type: 'ACTION_CARD',
+      badge: isIncome ? 'Pemasukan Tercatat' : 'Pengeluaran Tercatat',
+      accent: isIncome ? 'green' : 'red',
+      title: note || catName,
+      amount,
+      rows: [
+        { label: 'Kategori', value: catName },
+        ...(walletName ? [{ label: 'Dompet', value: walletName }] : []),
+      ].slice(0, 3),
+      detailRoute: txId ? { type: 'transaction', id: txId } : undefined,
+    };
+  }
+
+  if (res.cardType === 'SUMMARY' && data.summary && typeof data.summary === 'object') {
+    const s = data.summary as {
+      period?: string;
+      income?: number;
+      expense?: number;
+      remaining?: number;
+      totalBalance?: number;
+    };
+    return {
+      type: 'SUMMARY_CARD',
+      title: s.period ? `Ringkasan ${s.period}` : 'Ringkasan Keuangan',
+      metrics: [
+        {
+          label: 'Pemasukan',
+          value: `Rp ${Number(s.income ?? 0).toLocaleString('id-ID')}`,
+          tone: 'green',
+        },
+        {
+          label: 'Pengeluaran',
+          value: `Rp ${Number(s.expense ?? 0).toLocaleString('id-ID')}`,
+          tone: 'red',
+        },
+        {
+          label: 'Sisa Arus Kas',
+          value: `Rp ${Number(s.remaining ?? 0).toLocaleString('id-ID')}`,
+          tone: (s.remaining ?? 0) >= 0 ? 'blue' : 'red',
+        },
+        {
+          label: 'Saldo Siap Pakai',
+          value: `Rp ${Number(s.totalBalance ?? 0).toLocaleString('id-ID')}`,
+          tone: 'default',
+        },
+      ],
+    };
+  }
+
+  if (res.cardType === 'BUDGET' && Array.isArray(data.budgets)) {
+    return buildBudgetSummaryCard(data.budgets as BudgetSummaryRow[]);
+  }
+
+  if (
+    res.cardType === 'SPENDING_BREAKDOWN' &&
+    data.spendingBreakdown &&
+    typeof data.spendingBreakdown === 'object'
+  ) {
+    const sb = data.spendingBreakdown as {
+      period?: string;
+      totalExpense?: number;
+      items?: Array<{ category: string; total: number; percentage: number }>;
+    };
+    return {
+      type: 'SUMMARY_CARD',
+      title: sb.period ? `Pengeluaran ${sb.period}` : 'Rincian Pengeluaran',
+      metrics: [
+        {
+          label: 'Total Pengeluaran',
+          value: `Rp ${Number(sb.totalExpense ?? 0).toLocaleString('id-ID')}`,
+          tone: 'red',
+        },
+        {
+          label: 'Kategori Teratas',
+          value: sb.items?.[0]?.category ?? 'Belum ada',
+          tone: 'default',
+        },
+      ],
+      items: (sb.items ?? []).slice(0, 4).map((it) => ({
+        label: it.category,
+        value: `Rp ${Number(it.total).toLocaleString('id-ID')}`,
+        status: `${Math.round(it.percentage)}%`,
+      })),
+    };
+  }
+
+  if (res.cardType === 'GOAL' && Array.isArray(data.goals)) {
+    const list = data.goals as Array<{
+      name?: string;
+      currentAmount?: number;
+      targetAmount?: number;
+      percentage?: number;
+    }>;
+    return {
+      type: 'SUMMARY_CARD',
+      title: 'Target Tabungan Aktif',
+      metrics: [
+        {
+          label: 'Jumlah Target',
+          value: `${list.length} target`,
+          tone: 'blue',
+        },
+        {
+          label: 'Total Terkumpul',
+          value: `Rp ${list.reduce((s, g) => s + Number(g.currentAmount ?? 0), 0).toLocaleString('id-ID')}`,
+          tone: 'green',
+        },
+      ],
+      items: list.slice(0, 4).map((g) => ({
+        label: g.name ?? 'Target',
+        value: `Rp ${Number(g.currentAmount ?? 0).toLocaleString('id-ID')}`,
+        status: `${Math.round(Number(g.percentage ?? 0))}%`,
+      })),
+    };
+  }
+
+  if (res.cardType === 'WALLET' && Array.isArray(data.wallets)) {
+    const list = data.wallets as Array<{ name?: string; currentBalance?: number }>;
+    return {
+      type: 'SUMMARY_CARD',
+      title: 'Daftar Dompet Aktif',
+      metrics: [
+        {
+          label: 'Total Saldo',
+          value: `Rp ${Number(data.totalBalance ?? 0).toLocaleString('id-ID')}`,
+          tone: 'blue',
+        },
+        {
+          label: 'Jumlah Dompet',
+          value: `${list.length} dompet`,
+          tone: 'default',
+        },
+      ],
+      items: list.slice(0, 4).map((w) => ({
+        label: w.name ?? 'Dompet',
+        value: `Rp ${Number(w.currentBalance ?? 0).toLocaleString('id-ID')}`,
+      })),
+    };
+  }
+
+  if (res.cardType === 'FORECAST' && data.forecast && typeof data.forecast === 'object') {
+    const f = data.forecast as { projectedExpense?: number; projectedBalance?: number };
+    return {
+      type: 'SUMMARY_CARD',
+      title: 'Perkiraan Akhir Bulan',
+      metrics: [
+        {
+          label: 'Perkiraan Pengeluaran',
+          value: `Rp ${Number(f.projectedExpense ?? 0).toLocaleString('id-ID')}`,
+          tone: 'red',
+        },
+        {
+          label: 'Perkiraan Sisa Uang',
+          value: `Rp ${Number(f.projectedBalance ?? 0).toLocaleString('id-ID')}`,
+          tone: (f.projectedBalance ?? 0) >= 0 ? 'green' : 'red',
+        },
+      ],
+    };
+  }
+
+  return null;
+}
+
 export async function chatWithFinAi(params: {
+  userId: string;
+  message: string;
+  month: number;
+  year: number;
+  executeImmediately?: boolean;
+  history?: ChatHistoryTurn[];
+  ipAddress?: string | null;
+}): Promise<ChatResponsePayload> {
+  const res = await chatWithFinAiInner(params);
+  return {
+    ...res,
+    reply: sanitizeReplyText(res.reply),
+    card: buildStructuredCard(res),
+  };
+}
+
+async function chatWithFinAiInner(params: {
   userId: string;
   message: string;
   month: number;
@@ -811,6 +1304,52 @@ export async function chatWithFinAi(params: {
       findMentionedWallets(message, wallets).length > 0
     ) {
       // Biarkan diproses sebagai GOAL_CONTRIBUTE dengan dompet
+    } else if (!planningDetected.relatedGoal && planningDetected.targetAmount > 0) {
+      const deadlineDate = new Date();
+      if (planningDetected.durationDays && planningDetected.durationDays > 0) {
+        deadlineDate.setDate(deadlineDate.getDate() + planningDetected.durationDays);
+      } else {
+        deadlineDate.setMonth(
+          deadlineDate.getMonth() + Math.max(1, planningDetected.durationMonths ?? 3)
+        );
+      }
+      const createdGoal = await createGoal(
+        userId,
+        {
+          name: planningDetected.targetName,
+          targetAmount: planningDetected.targetAmount,
+          currentAmount: 0,
+          deadline: deadlineDate,
+          initialSourceType: 'EXTERNAL',
+        },
+        ipAddress
+      );
+      const deadlineLabel = formatShortIdDate(deadlineDate);
+      return {
+        reply: `Siap, target tabungan "${createdGoal.name}" sebesar Rp ${createdGoal.targetAmount.toLocaleString('id-ID')} sudah dibuat.`,
+        intent: 'CREATE_GOAL',
+        actionExecuted: true,
+        pendingConfirmation: false,
+        cardType: 'GOAL',
+        cardData: {
+          goalId: createdGoal.id,
+          name: createdGoal.name,
+          amount: createdGoal.targetAmount,
+          deadline: createdGoal.deadline,
+        },
+        card: {
+          type: 'ACTION_CARD',
+          badge: 'Target Tabungan Dibuat',
+          accent: 'blue',
+          title: createdGoal.name,
+          amount: createdGoal.targetAmount,
+          rows: [
+            { label: 'Target Dana', value: `Rp ${createdGoal.targetAmount.toLocaleString('id-ID')}` },
+            { label: 'Tenggat', value: deadlineLabel },
+          ],
+          detailRoute: { type: 'goal', id: createdGoal.id },
+        },
+      };
     } else if (!planningDetected.durationMonths && !planningDetected.relatedGoal?.deadline) {
       return {
         reply: `Berapa lama kamu ingin menabung untuk "${planningDetected.targetName}" (target Rp ${planningDetected.targetAmount.toLocaleString('id-ID')})? Sebutkan durasi dalam bulan atau tahun, misalnya "dalam 6 bulan".`,
@@ -874,6 +1413,17 @@ export async function chatWithFinAi(params: {
         },
       };
     }
+  }
+
+  const isBudgetCheckQuery =
+    (/\b(cek|sisa|lihat|status|info)\s+(anggaran|budget)\b|\b(anggaran|budget)\s+(harian|mingguan|bulanan)\b|\bbatas\s+pengeluaran\b/i.test(
+      message
+    ) ||
+      message.trim().toLowerCase() === 'anggaran') &&
+    !/\b(buat|bikin|tambah|atur|set|ubah|ganti|edit|hapus)\b/i.test(message);
+
+  if (isBudgetCheckQuery) {
+    return buildBudgetCheckResponse(budgets);
   }
 
   const financialContext = {
@@ -961,6 +1511,7 @@ export async function chatWithFinAi(params: {
       if (
         parsed.intent === 'CREATE_TRANSACTION' ||
         parsed.intent === 'TRANSFER' ||
+        parsed.intent === 'CREATE_GOAL' ||
         parsed.intent === 'GOAL_CONTRIBUTE' ||
         parsed.intent === 'SET_BUDGET' ||
         parsed.intent === 'DELETE_BUDGET' ||
@@ -998,6 +1549,73 @@ export async function chatWithFinAi(params: {
     intent = det.intent;
     reply = det.reply;
     parsedAction = det.actionPayload;
+  }
+
+  if (intent === 'CREATE_GOAL') {
+    const rawTarget = parsedAction?.amount ?? 0;
+    const targetAmt =
+      rawTarget > 0
+        ? normalizeIndonesianAmount(rawTarget, message, 'EXPENSE')
+        : 0;
+    const goalTitle = (parsedAction?.goalName || parsedAction?.note || '').trim();
+
+    if (!goalTitle || targetAmt <= 0) {
+      return {
+        reply: 'Sebutkan nama target dan nominal tabungan yang ingin dibuat.',
+        intent: 'CREATE_GOAL',
+        actionExecuted: false,
+        pendingConfirmation: false,
+        cardType: null,
+        cardData: null,
+      };
+    }
+
+    const deadlineDate = new Date();
+    if (parsedAction?.deadlineDays && parsedAction.deadlineDays > 0) {
+      deadlineDate.setDate(deadlineDate.getDate() + parsedAction.deadlineDays);
+    } else {
+      deadlineDate.setMonth(
+        deadlineDate.getMonth() + Math.max(1, parsedAction?.deadlineMonths ?? 3)
+      );
+    }
+
+    const createdGoal = await createGoal(
+      userId,
+      {
+        name: goalTitle,
+        targetAmount: targetAmt,
+        currentAmount: 0,
+        deadline: deadlineDate,
+        initialSourceType: 'EXTERNAL',
+      },
+      ipAddress
+    );
+    const deadlineLabel = formatShortIdDate(deadlineDate);
+    return {
+      reply: `Siap, target tabungan "${createdGoal.name}" sebesar Rp ${createdGoal.targetAmount.toLocaleString('id-ID')} sudah dibuat.`,
+      intent: 'CREATE_GOAL',
+      actionExecuted: true,
+      pendingConfirmation: false,
+      cardType: 'GOAL',
+      cardData: {
+        goalId: createdGoal.id,
+        name: createdGoal.name,
+        amount: createdGoal.targetAmount,
+        deadline: createdGoal.deadline,
+      },
+      card: {
+        type: 'ACTION_CARD',
+        badge: 'Target Tabungan Dibuat',
+        accent: 'blue',
+        title: createdGoal.name,
+        amount: createdGoal.targetAmount,
+        rows: [
+          { label: 'Target Dana', value: `Rp ${createdGoal.targetAmount.toLocaleString('id-ID')}` },
+          { label: 'Tenggat', value: deadlineLabel },
+        ],
+        detailRoute: { type: 'goal', id: createdGoal.id },
+      },
+    };
   }
 
   if (intent === 'SET_BUDGET') {
@@ -1684,7 +2302,7 @@ export async function chatWithFinAi(params: {
     };
   } else if (cardType === 'BUDGET') {
     cardData = {
-      budgets: budgets.slice(0, 4),
+      budgets,
     };
   } else if (cardType === 'RECOMMENDATION') {
     cardData = {
