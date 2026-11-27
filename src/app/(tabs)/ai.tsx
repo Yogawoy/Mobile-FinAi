@@ -218,20 +218,20 @@ export default function AiChatbotScreen() {
 
       const richCard =
         res.cardType === 'FORECAST' ||
-        res.cardType === 'ANOMALY' ||
-        res.cardType === 'BUDGET' ||
-        res.cardType === 'BUDGET_SET' ||
-        res.cardType === 'BUDGET_UPDATED' ||
-        res.cardType === 'BUDGET_DELETED' ||
-        res.cardType === 'BUDGET_RESET' ||
-        res.cardType === 'SPENDING_BREAKDOWN' ||
-        res.cardType === 'SUMMARY' ||
-        res.cardType === 'GOAL' ||
-        res.cardType === 'WALLET' ||
-        res.cardType === 'FINANCIAL_PLAN' ||
-        res.cardType === 'WALLET_PICKER' ||
-        res.cardType === 'TRANSACTION_PREVIEW' ||
-        res.cardType === 'TRANSACTION_CREATED'
+          res.cardType === 'ANOMALY' ||
+          res.cardType === 'BUDGET' ||
+          res.cardType === 'BUDGET_SET' ||
+          res.cardType === 'BUDGET_UPDATED' ||
+          res.cardType === 'BUDGET_DELETED' ||
+          res.cardType === 'BUDGET_RESET' ||
+          res.cardType === 'SPENDING_BREAKDOWN' ||
+          res.cardType === 'SUMMARY' ||
+          res.cardType === 'GOAL' ||
+          res.cardType === 'WALLET' ||
+          res.cardType === 'FINANCIAL_PLAN' ||
+          res.cardType === 'WALLET_PICKER' ||
+          res.cardType === 'TRANSACTION_PREVIEW' ||
+          res.cardType === 'TRANSACTION_CREATED'
           ? res.cardType
           : res.cardType === 'RECOMMENDATION'
             ? ('RECOMMENDATIONS' as const)
@@ -274,13 +274,13 @@ export default function AiChatbotScreen() {
       prev.map((m) =>
         m.id === msgId && m.cardData
           ? {
-              ...m,
-              cardData: {
-                ...m.cardData,
-                categoryId: category.id,
-                categoryName: category.label,
-              },
-            }
+            ...m,
+            cardData: {
+              ...m.cardData,
+              categoryId: category.id,
+              categoryName: category.label,
+            },
+          }
           : m
       )
     );
@@ -322,14 +322,14 @@ export default function AiChatbotScreen() {
         msg.cardData?.wallets && msg.cardData.wallets.length > 0
           ? msg.cardData.wallets
           : wallets
-              .filter((w) => !w.isArchived)
-              .map((w) => ({
-                id: w.id,
-                name: w.name,
-                type: w.type,
-                currentBalance: w.balance,
-                sufficient: w.balance >= firstSaving,
-              }));
+            .filter((w) => !w.isArchived)
+            .map((w) => ({
+              id: w.id,
+              name: w.name,
+              type: w.type,
+              currentBalance: w.balance,
+              sufficient: w.balance >= firstSaving,
+            }));
       const sourceWallets = rawWallets.filter((w) => w.id !== destWallet.id);
 
       if (firstSaving > 0 && sourceWallets.length > 0) {
@@ -365,16 +365,16 @@ export default function AiChatbotScreen() {
           cardData:
             firstSaving > 0
               ? {
-                  intent: 'GOAL_CONTRIBUTE',
-                  goalId,
-                  type: 'EXPENSE',
-                  amount: firstSaving,
-                  note: `Setoran target ${plan.targetName}`,
-                  walletId: destWallet.id,
-                  walletName: destWallet.name,
-                  currentWalletBalance: destWallet.currentBalance,
-                  projectedWalletBalance: Math.max(0, destWallet.currentBalance - firstSaving),
-                }
+                intent: 'GOAL_CONTRIBUTE',
+                goalId,
+                type: 'EXPENSE',
+                amount: firstSaving,
+                note: `Setoran target ${plan.targetName}`,
+                walletId: destWallet.id,
+                walletName: destWallet.name,
+                currentWalletBalance: destWallet.currentBalance,
+                projectedWalletBalance: Math.max(0, destWallet.currentBalance - firstSaving),
+              }
               : null,
         };
         setMessages((prev) => [...prev, previewMsg]);
@@ -445,14 +445,14 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  richCard: 'TRANSACTION_CREATED',
-                  actionStatus: 'CONFIRMED',
-                  cardData: {
-                    ...data,
-                    newWalletBalance: data.amount,
-                  },
-                }
+                ...m,
+                richCard: 'TRANSACTION_CREATED',
+                actionStatus: 'CONFIRMED',
+                cardData: {
+                  ...data,
+                  newWalletBalance: data.amount,
+                },
+              }
               : m
           )
         );
@@ -467,14 +467,14 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  richCard: 'TRANSACTION_CREATED',
-                  actionStatus: 'CONFIRMED',
-                  cardData: {
-                    ...data,
-                    newWalletBalance: 0,
-                  },
-                }
+                ...m,
+                richCard: 'TRANSACTION_CREATED',
+                actionStatus: 'CONFIRMED',
+                cardData: {
+                  ...data,
+                  newWalletBalance: 0,
+                },
+              }
               : m
           )
         );
@@ -489,14 +489,14 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  richCard: 'TRANSACTION_CREATED',
-                  actionStatus: 'CONFIRMED',
-                  cardData: {
-                    ...data,
-                    newWalletBalance: 0,
-                  },
-                }
+                ...m,
+                richCard: 'TRANSACTION_CREATED',
+                actionStatus: 'CONFIRMED',
+                cardData: {
+                  ...data,
+                  newWalletBalance: 0,
+                },
+              }
               : m
           )
         );
@@ -515,17 +515,17 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  richCard: 'TRANSACTION_CREATED',
-                  actionStatus: 'CONFIRMED',
-                  cardData: {
-                    ...data,
-                    newWalletBalance:
-                      data.type === 'TRANSFER'
-                        ? data.projectedWalletBalance ?? data.currentWalletBalance
-                        : Number(updatedGoal.currentAmount),
-                  },
-                }
+                ...m,
+                richCard: 'TRANSACTION_CREATED',
+                actionStatus: 'CONFIRMED',
+                cardData: {
+                  ...data,
+                  newWalletBalance:
+                    data.type === 'TRANSFER'
+                      ? data.projectedWalletBalance ?? data.currentWalletBalance
+                      : Number(updatedGoal.currentAmount),
+                },
+              }
               : m
           )
         );
@@ -558,16 +558,16 @@ export default function AiChatbotScreen() {
         prev.map((m) =>
           m.id === msg.id
             ? {
-                ...m,
-                richCard: 'TRANSACTION_CREATED',
-                actionStatus: 'CONFIRMED',
-                cardData: {
-                  ...data,
-                  transactionId: created.id,
-                  newWalletBalance:
-                    data.projectedWalletBalance ?? data.currentWalletBalance,
-                },
-              }
+              ...m,
+              richCard: 'TRANSACTION_CREATED',
+              actionStatus: 'CONFIRMED',
+              cardData: {
+                ...data,
+                transactionId: created.id,
+                newWalletBalance:
+                  data.projectedWalletBalance ?? data.currentWalletBalance,
+              },
+            }
             : m
         )
       );

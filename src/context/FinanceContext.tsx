@@ -8,6 +8,11 @@ import {
   type TransactionItem,
   type WalletItem,
 } from '@/lib/mockData';
+import {
+  loadGoalThemePrefs,
+  saveGoalThemePref,
+  type GoalThemePref,
+} from '@/lib/goalTheme';
 import { getWalletTheme, type WalletColorKey, type WalletTypeKey } from '@/lib/walletTheme';
 import {
   aiService,
@@ -185,6 +190,7 @@ interface FinanceContextValue {
   setBudgets: React.Dispatch<React.SetStateAction<BudgetItem[]>>;
   setTransactions: React.Dispatch<React.SetStateAction<TransactionItem[]>>;
   setGoals: React.Dispatch<React.SetStateAction<GoalItem[]>>;
+  updateGoalTheme: (goalId: string, pref: GoalThemePref) => Promise<void>;
   setCategories: React.Dispatch<React.SetStateAction<ManagedCategory[]>>;
   setRecurringSchedules: React.Dispatch<React.SetStateAction<RecurringScheduleItem[]>>;
   refreshAllData: () => Promise<void>;
@@ -285,7 +291,7 @@ function formatDateGroupLabel(iso: string): string {
     year: 'numeric',
   });
 
-  if (isToday) return `Hari Ini, ${formatted}`;
+  if (isToday) return `Hari Ini ${formatted}`;
 
   const yesterday = new Date(now);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -294,7 +300,7 @@ function formatDateGroupLabel(iso: string): string {
     d.getMonth() === yesterday.getMonth() &&
     d.getFullYear() === yesterday.getFullYear();
 
-  if (isYesterday) return `Kemarin, ${formatted}`;
+  if (isYesterday) return `Kemarin ${formatted}`;
   return formatted;
 }
 
@@ -389,19 +395,28 @@ function mapBudget(b: BackendBudget): BudgetItem {
   };
 }
 
-function mapGoal(g: BackendGoal): GoalItem {
+function mapGoal(
+  g: BackendGoal,
+  themePrefs?: Record<string, GoalThemePref>
+): GoalItem {
   const deadline = new Date(g.deadline);
+  const pref = themePrefs?.[g.id];
   return {
     id: g.id,
     name: g.name,
-    iconKey: 'target',
+    iconKey: pref?.iconKey ?? 'target',
+    colorKey: pref?.colorKey ?? 'royal',
     target: Number(g.targetAmount),
     current: Number(g.currentAmount),
-    deadline: deadline.toLocaleDateString('id-ID', {
-      month: 'short',
-      year: 'numeric',
-    }),
+    deadline:
+      deadline.getFullYear() >= 2090
+        ? 'Tanpa Batas'
+        : deadline.toLocaleDateString('id-ID', {
+            month: 'short',
+            year: 'numeric',
+          }),
     isRealized: g.status === 'COMPLETED',
+    mutations: g.mutations ?? [],
   };
 }
 
@@ -568,7 +583,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (goalsRes.status === 'fulfilled') {
-        setGoals(goalsRes.value.map(mapGoal));
+        const themePrefs = await loadGoalThemePrefs();
+        setGoals(goalsRes.value.map((g) => mapGoal(g, themePrefs)));
       }
 
       if (recurringRes.status === 'fulfilled') {
@@ -878,6 +894,17 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setUnreadNotificationCount(0);
   };
 
+  const updateGoalTheme = useCallback(async (goalId: string, pref: GoalThemePref) => {
+    await saveGoalThemePref(goalId, pref);
+    setGoals((prev) =>
+      prev.map((g) =>
+        g.id === goalId
+          ? { ...g, iconKey: pref.iconKey, colorKey: pref.colorKey }
+          : g
+      )
+    );
+  }, []);
+
   const resetDemoData = () => {
     void loginAsDemo().catch(() => { });
   };
@@ -917,6 +944,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         setBudgets,
         setTransactions,
         setGoals,
+        updateGoalTheme,
         setCategories,
         setRecurringSchedules,
         refreshAllData,

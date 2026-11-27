@@ -208,9 +208,19 @@ export default function RecurringScreen() {
   };
 
   const handleRecordNow = async (item: RecurringScheduleItem) => {
-    const targetWallet = wallets.find((w) => !w.isArchived) ?? wallets[0];
+    const targetWallet =
+      (item.walletId ? wallets.find((w) => w.id === item.walletId) : undefined) ??
+      wallets.find((w) => !w.isArchived) ??
+      wallets[0];
     if (!targetWallet) {
       showToast('Tambahkan dompet aktif terlebih dahulu', 'error');
+      return;
+    }
+    if (item.type === 'EXPENSE' && targetWallet.balance < item.amount) {
+      showToast(
+        `Saldo ${targetWallet.name} tidak cukup, sisa saat ini ${formatIDR(targetWallet.balance)}`,
+        'error'
+      );
       return;
     }
 
@@ -223,6 +233,7 @@ export default function RecurringScreen() {
       await refreshAllData();
       showToast(`${item.title} (${formatIDR(item.amount)}) tercatat ke ${targetWallet.name}`);
     } catch (err) {
+      await refreshAllData();
       showToast(err instanceof Error ? err.message : 'Gagal mencatat transaksi rutin', 'error');
     }
   };

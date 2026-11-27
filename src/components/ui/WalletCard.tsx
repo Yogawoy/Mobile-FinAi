@@ -1,11 +1,10 @@
-import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Banknote, Landmark, Smartphone } from 'lucide-react-native';
+import { FinRadius } from '@/constants/theme';
 import { getWalletTypeLabels, resolveWalletTheme } from '@/constants/walletTheme';
 import { formatIDR } from '@/lib/format';
-import { FinRadius } from '@/constants/theme';
 import type { Wallet } from '@/types/api';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Banknote, Landmark, Smartphone } from 'lucide-react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface WalletCardProps {
   wallet: Wallet;

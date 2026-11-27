@@ -117,7 +117,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Makanan',
     walletId: 'gopay',
     walletName: 'GoPay',
-    dateGroup: 'Hari Ini, 22 Nov 2026',
+    dateGroup: 'Hari Ini 22 Nov 2026',
     dateLabel: '12:30',
     amount: 45_000,
     type: 'EXPENSE',
@@ -134,7 +134,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     walletName: 'Bank BCA',
     targetWalletId: 'gopay',
     targetWalletName: 'GoPay',
-    dateGroup: 'Hari Ini, 22 Nov 2026',
+    dateGroup: 'Hari Ini 22 Nov 2026',
     dateLabel: '09:15',
     amount: 300_000,
     type: 'TRANSFER',
@@ -149,7 +149,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Harian',
     walletId: 'cash',
     walletName: 'Uang Tunai',
-    dateGroup: 'Hari Ini, 22 Nov 2026',
+    dateGroup: 'Hari Ini 22 Nov 2026',
     dateLabel: '08:10',
     amount: 22_000,
     type: 'EXPENSE',
@@ -164,7 +164,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Gaji / Proyek',
     walletId: 'bca',
     walletName: 'Bank BCA',
-    dateGroup: 'Kemarin, 21 Nov 2026',
+    dateGroup: 'Kemarin 21 Nov 2026',
     dateLabel: '17:15',
     amount: 2_500_000,
     type: 'INCOME',
@@ -179,7 +179,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Transportasi',
     walletId: 'gopay',
     walletName: 'GoPay',
-    dateGroup: 'Kemarin, 21 Nov 2026',
+    dateGroup: 'Kemarin 21 Nov 2026',
     dateLabel: '14:20',
     amount: 28_000,
     type: 'EXPENSE',
@@ -194,7 +194,7 @@ export const INITIAL_TRANSACTIONS: TransactionItem[] = [
     categoryLabel: 'Belanja',
     walletId: 'mandiri',
     walletName: 'Tabungan Mandiri',
-    dateGroup: 'Kemarin, 21 Nov 2026',
+    dateGroup: 'Kemarin 21 Nov 2026',
     dateLabel: '11:05',
     amount: 320_000,
     type: 'EXPENSE',
@@ -406,13 +406,24 @@ export const mockBudgets: BudgetItem[] = [
   },
 ];
 
-export type GoalIconKey = 'shield' | 'laptop' | 'graduation' | 'target';
+export type GoalIconKey =
+  | 'shield'
+  | 'laptop'
+  | 'plane'
+  | 'graduation'
+  | 'home'
+  | 'car'
+  | 'heart'
+  | 'briefcase'
+  | 'piggy'
+  | 'target';
 export type GoalFrequency = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 
 export interface GoalItem {
   id: string;
   name: string;
   iconKey: GoalIconKey;
+  colorKey?: 'royal' | 'emerald' | 'teal' | 'amber' | 'rose' | 'slate';
   current: number;
   target: number;
   deadline: string;
@@ -420,6 +431,17 @@ export interface GoalItem {
   walletName?: string;
   frequency?: GoalFrequency;
   isRealized?: boolean;
+  mutations?: Array<{
+    id: string;
+    goalId: string;
+    type: 'CONTRIBUTE' | 'WITHDRAW';
+    flowType: 'WALLET' | 'EXTERNAL';
+    walletId?: string | null;
+    walletName?: string | null;
+    amount: number;
+    note?: string | null;
+    createdAt: string;
+  }>;
 }
 
 export const mockGoals: GoalItem[] = [

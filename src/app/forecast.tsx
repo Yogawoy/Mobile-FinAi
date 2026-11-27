@@ -1,29 +1,3 @@
-import React, { useMemo, useState } from 'react';
-import {
-  Pressable,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import {
-  ArrowLeft,
-  ArrowRight,
-  Check,
-  ShieldCheck,
-  Sparkles,
-} from 'lucide-react-native';
-import Animated, {
-  Easing,
-  FadeInDown,
-  FadeOut,
-  LinearTransition,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   InteractiveForecastChart,
   SIMULATION_SCENARIOS,
@@ -35,6 +9,32 @@ import { BUDGET_RULE_META, useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
 import { mockAnomalies, type AnomalyItem } from '@/lib/mockData';
 import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  ShieldCheck,
+  Sparkles,
+} from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  FadeOut,
+  LinearTransition,
+} from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const TIME_ELAPSED_PCT = 73; // Hari 22/30
 const CURRENT_BUDGET_USED_PCT = 34;

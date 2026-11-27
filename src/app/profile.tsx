@@ -1,13 +1,11 @@
-import React, { useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { FinAiLogoMark } from '@/components/brand/FinAiLogo';
+import { CategoryManagerSheet } from '@/components/modals/CategoryManagerSheet';
+import { RecurringBillsSheet } from '@/components/modals/RecurringBillsSheet';
+import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { useToast } from '@/components/ui/ToastProvider';
+import { useFinance } from '@/context/FinanceContext';
+import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -18,25 +16,25 @@ import {
   ChevronRight,
   EyeOff,
   HelpCircle,
-  Info,
   KeyRound,
   LogOut,
-  RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
   Tag,
-  UserPen,
+  UserPen
 } from 'lucide-react-native';
+import React, { useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CategoryManagerSheet } from '@/components/modals/CategoryManagerSheet';
-import { RecurringBillsSheet } from '@/components/modals/RecurringBillsSheet';
-import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
-import { FinAiLogoMark } from '@/components/brand/FinAiLogo';
-import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
-import { useToast } from '@/components/ui/ToastProvider';
-import { useFinance } from '@/context/FinanceContext';
-import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 
 const AUDIT_LOGS = [
   {
@@ -44,7 +42,7 @@ const AUDIT_LOGS = [
     action: 'AUTH_LOGIN',
     detail: 'Masuk berhasil via Expo Go',
     device: 'Redmi Note 12',
-    time: 'Hari ini, 09:42',
+    time: 'Hari ini 09:42',
     badgeBg: '#ECFDF5',
     badgeColor: '#047857',
   },
@@ -62,7 +60,7 @@ const AUDIT_LOGS = [
     action: 'TX_CREATE',
     detail: 'Mencatat pengeluaran Makan Siang Rp 45.000',
     device: 'Redmi Note 12',
-    time: 'Kemarin, 12:35',
+    time: 'Kemarin 12:35',
     badgeBg: '#F8FAFC',
     badgeColor: '#475569',
   },
@@ -468,7 +466,7 @@ export default function ProfileScreen() {
       <RecurringBillsSheet
         visible={recurringSheetOpen}
         onClose={() => setRecurringSheetOpen(false)}
-        onRecordBill={() => {}}
+        onRecordBill={() => { }}
       />
 
       {/* SHEET 4: UBAH PASSWORD */}

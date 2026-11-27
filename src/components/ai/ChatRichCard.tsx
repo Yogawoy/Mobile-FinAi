@@ -1,6 +1,3 @@
-import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, Check, ShieldAlert, ShieldCheck, X } from 'lucide-react-native';
 import { formatIDR } from '@/lib/format';
 import {
   computeLiveMetrics,
@@ -12,6 +9,9 @@ import {
   type AiWalletOption,
 } from '@/services/ai.service';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+import { AlertTriangle, Check, ShieldAlert, ShieldCheck, X } from 'lucide-react-native';
+import { useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface ChatCategoryOption {
   id: string;
@@ -191,10 +191,10 @@ export function ChatRichCard({
           valueColor={amountColor}
         />
         {!isCancelled &&
-        !isConfirmed &&
-        cardData.type !== 'TRANSFER' &&
-        categories.length > 0 &&
-        onSelectCategory ? (
+          !isConfirmed &&
+          cardData.type !== 'TRANSFER' &&
+          categories.length > 0 &&
+          onSelectCategory ? (
           <View style={styles.kvRowBorder}>
             <Pressable
               onPress={() => setPickingCategory((prev) => !prev)}

@@ -1,3 +1,6 @@
+import { formatIDR } from '@/lib/format';
+import { formatCompactIDR } from '@/lib/goalCalculator';
+import { Colors, FontFamily, Typography } from '@/theme/tokens';
 import React, { useMemo, useState } from 'react';
 import {
   Pressable,
@@ -10,13 +13,10 @@ import Svg, {
   Circle,
   Defs,
   Line,
-  LinearGradient as SvgGradient,
   Path,
   Stop,
+  LinearGradient as SvgGradient,
 } from 'react-native-svg';
-import { formatIDR } from '@/lib/format';
-import { formatCompactIDR } from '@/lib/goalCalculator';
-import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
 export type SimulationKey = 'CURRENT' | 'SAVE_20' | 'SAVE_35';
 

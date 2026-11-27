@@ -130,7 +130,7 @@ export default function TransactionsTabScreen() {
   const groupedSections = useMemo(() => {
     const map = new Map<string, TransactionItem[]>();
     for (const tx of filteredTransactions) {
-      const group = tx.dateGroup || 'Hari Ini, 22 Nov 2026';
+      const group = tx.dateGroup || 'Hari Ini 22 Nov 2026';
       const list = map.get(group);
       if (list) list.push(tx);
       else map.set(group, [tx]);
@@ -208,7 +208,7 @@ export default function TransactionsTabScreen() {
       walletName: sourceWallet?.name || 'Dompet',
       targetWalletId: isTransfer ? payload.targetWalletId : undefined,
       targetWalletName: isTransfer ? targetWallet?.name : undefined,
-      dateGroup: 'Hari Ini, 22 Nov 2026',
+      dateGroup: 'Hari Ini 22 Nov 2026',
       dateLabel: `${hh}:${mm}`,
       amount: payload.amount,
       type: payload.mode,

@@ -115,10 +115,34 @@ export function QuickTransactionSheet({
     }
   };
 
+  const numericAmount = Number(amountText.replace(/[^0-9]/g, '')) || 0;
+  const selectedSourceWallet = wallets.find((w) => w.id === walletId);
+  const effectiveAvailableBalance =
+    selectedSourceWallet
+      ? selectedSourceWallet.balance +
+        (editingTransaction &&
+        editingTransaction.walletId === walletId &&
+        editingTransaction.type !== 'INCOME'
+          ? editingTransaction.amount
+          : 0)
+      : 0;
+  const isInsufficientBalance =
+    mode !== 'INCOME' &&
+    numericAmount > 0 &&
+    Boolean(selectedSourceWallet) &&
+    numericAmount > effectiveAvailableBalance;
+
   const handleSave = () => {
-    const numericAmount = Number(amountText.replace(/[^0-9]/g, ''));
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
       showToast('Masukkan nominal transaksi lebih dari 0', 'error');
+      return;
+    }
+
+    if (isInsufficientBalance && selectedSourceWallet) {
+      showToast(
+        `Saldo ${selectedSourceWallet.name} tidak cukup, sisa ${formatIDR(selectedSourceWallet.balance)}`,
+        'error'
+      );
       return;
     }
 
@@ -154,10 +178,15 @@ export function QuickTransactionSheet({
       onClose={onClose}
       footer={
         <Pressable
+          disabled={isInsufficientBalance}
           onPress={handleSave}
           accessibilityRole="button"
           accessibilityLabel="Simpan Transaksi"
-          style={({ pressed }) => [styles.saveBtn, pressed && styles.saveBtnPressed]}
+          style={({ pressed }) => [
+            styles.saveBtn,
+            isInsufficientBalance && { opacity: 0.45 },
+            pressed && styles.saveBtnPressed,
+          ]}
         >
           <Text style={styles.saveBtnText}>Simpan</Text>
         </Pressable>
@@ -187,7 +216,12 @@ export function QuickTransactionSheet({
       </View>
 
       <Text style={styles.label}>Nominal (Rp)</Text>
-      <View style={styles.amountBox}>
+      <View
+        style={[
+          styles.amountBox,
+          isInsufficientBalance && { borderColor: Colors.expense },
+        ]}
+      >
         <Text style={styles.rpPrefix}>Rp</Text>
         <TextInput
           style={[styles.amountInput, Typography.tabularNums]}
@@ -198,6 +232,11 @@ export function QuickTransactionSheet({
           onChangeText={(val) => setAmountText(formatThousands(val))}
         />
       </View>
+      {isInsufficientBalance && selectedSourceWallet ? (
+        <Text style={[styles.insufficientText, Typography.tabularNums]}>
+          Saldo dompet tidak cukup, sisa {formatIDR(selectedSourceWallet.balance)}
+        </Text>
+      ) : null}
 
       <Text style={styles.label}>
         {mode === 'TRANSFER' ? 'Dari Dompet' : 'Pilih Dompet'}
@@ -210,10 +249,19 @@ export function QuickTransactionSheet({
               <Pressable
                 key={w.id}
                 onPress={() => setWalletId(w.id)}
-                style={[styles.chip, selected && styles.chipSelected]}
+                style={[styles.walletChip, selected && styles.chipSelected]}
               >
                 <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
                   {w.name}
+                </Text>
+                <Text
+                  style={[
+                    styles.walletChipBal,
+                    Typography.tabularNums,
+                    selected && styles.walletChipBalSelected,
+                  ]}
+                >
+                  {formatIDR(w.balance)}
                 </Text>
               </Pressable>
             );
@@ -232,10 +280,19 @@ export function QuickTransactionSheet({
                   <Pressable
                     key={w.id}
                     onPress={() => setTargetWalletId(w.id)}
-                    style={[styles.chip, selected && styles.chipSelected]}
+                    style={[styles.walletChip, selected && styles.chipSelected]}
                   >
                     <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
                       {w.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.walletChipBal,
+                        Typography.tabularNums,
+                        selected && styles.walletChipBalSelected,
+                      ]}
+                    >
+                      {formatIDR(w.balance)}
                     </Text>
                   </Pressable>
                 );
@@ -344,6 +401,29 @@ const styles = StyleSheet.create({
   chipRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  insufficientText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    color: Colors.expense,
+    marginTop: 6,
+  },
+  walletChip: {
+    paddingHorizontal: 13,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: Colors.canvas,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 2,
+  },
+  walletChipBal: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
+  walletChipBalSelected: {
+    color: Colors.primary,
   },
   catWrap: {
     flexDirection: 'row',

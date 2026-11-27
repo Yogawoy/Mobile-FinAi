@@ -1,11 +1,3 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import {
-  Archive,
-  ArchiveRestore,
-  ArrowLeftRight,
-  Pencil,
-} from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
@@ -13,6 +5,14 @@ import { formatIDR } from '@/lib/format';
 import { type TransactionItem, type WalletItem } from '@/lib/mockData';
 import { getWalletTheme } from '@/lib/walletTheme';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+import {
+  Archive,
+  ArchiveRestore,
+  ArrowLeftRight,
+  Pencil,
+} from 'lucide-react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 interface WalletDetailSheetProps {
   visible: boolean;

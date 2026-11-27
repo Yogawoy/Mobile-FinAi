@@ -1,19 +1,27 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ArrowLeft, Check, Pencil, Plus, Trash2 } from 'lucide-react-native';
+import {
+  ArrowDownLeft,
+  ArrowLeft,
+  ArrowUpRight,
+  Check,
+  Pencil,
+  Plus,
+  Trash2,
+} from 'lucide-react-native';
 import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
+import { DeleteGoalSheet } from '@/components/budgets/DeleteGoalSheet';
 import {
   GoalFormSheet,
   type GoalContributePayload,
@@ -22,7 +30,10 @@ import {
   GoalRealizeSheet,
   type GoalRealizePayload,
 } from '@/components/budgets/GoalRealizeSheet';
-import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import {
+  WithdrawGoalSheet,
+  type GoalWithdrawPayload,
+} from '@/components/budgets/WithdrawGoalSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
@@ -31,7 +42,8 @@ import {
   calculateGoalRecommendation,
   parseDeadlineMonths,
 } from '@/lib/goalCalculator';
-import { goalService } from '@/services/goal.service';
+import { getGoalColorPalette, renderGoalThemeIcon } from '@/lib/goalTheme';
+import { goalService, type GoalMutationItem } from '@/services/goal.service';
 import { transactionService } from '@/services/transaction.service';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 
@@ -109,11 +121,27 @@ export default function GoalDetailScreen() {
   const goal = goals.find((g) => g.id === id);
 
   const [contributeOpen, setContributeOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [realizeOpen, setRealizeOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editName, setEditName] = useState('');
-  const [editTargetText, setEditTargetText] = useState('');
+  const [deleteWithBalanceOpen, setDeleteWithBalanceOpen] = useState(false);
+  const [mutations, setMutations] = useState<GoalMutationItem[]>(
+    () => goal?.mutations ?? []
+  );
+
+  const loadDetailMutations = useCallback(async () => {
+    if (!id) return;
+    try {
+      const detail = await goalService.getGoalById(id);
+      setMutations(detail.mutations ?? []);
+    } catch {
+      // Gunakan data mutasi dari state lokal jika offline
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void loadDetailMutations();
+  }, [loadDetailMutations]);
 
   if (!goal) {
     return (
@@ -141,7 +169,8 @@ export default function GoalDetailScreen() {
             ? ((pct - 25) / 25) * 33.33
             : 0;
   const remaining = Math.max(0, goal.target - goal.current);
-  const ringColor = isDone ? '#10B981' : '#3B7AF5';
+  const goalPalette = getGoalColorPalette(goal.colorKey);
+  const ringColor = isDone ? '#10B981' : goalPalette.primary;
   const rec = calculateGoalRecommendation(
     goal.current,
     goal.target,
@@ -150,43 +179,18 @@ export default function GoalDetailScreen() {
   );
   const monthsLeft = goal.deadline ? parseDeadlineMonths(goal.deadline) : null;
 
-  const openEdit = () => {
-    setEditName(goal.name);
-    setEditTargetText(formatThousands(String(goal.target)));
-    setEditOpen(true);
-  };
-
-  const handleSaveEdit = async () => {
-    const newTarget = Number(editTargetText.replace(/[^0-9]/g, ''));
-    if (!editName.trim() || !Number.isFinite(newTarget) || newTarget <= 0) {
-      showToast('Nama dan nominal target harus valid', 'error');
-      return;
-    }
-    setEditOpen(false);
-    setGoals((prev) =>
-      prev.map((g) =>
-        g.id === goal.id ? { ...g, name: editName.trim(), target: newTarget } : g
-      )
-    );
-    try {
-      await goalService.updateGoal(goal.id, {
-        name: editName.trim(),
-        targetAmount: newTarget,
-      });
-      await refreshAllData();
-      showToast('Target tabungan diperbarui');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Gagal memperbarui target', 'error');
-    }
-  };
-
-  const handleDeleteGoal = async () => {
+  const handleDeleteGoal = async (refundToWalletId?: string) => {
     setConfirmDeleteOpen(false);
+    setDeleteWithBalanceOpen(false);
     setGoals((prev) => prev.filter((g) => g.id !== goal.id));
     try {
-      await goalService.deleteGoal(goal.id);
+      await goalService.deleteGoal(goal.id, refundToWalletId);
       await refreshAllData();
-      showToast('Target tabungan dihapus');
+      showToast(
+        refundToWalletId
+          ? 'Tabungan dihapus dan dana dikembalikan ke dompet'
+          : 'Target tabungan dihapus'
+      );
       router.back();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Gagal menghapus target', 'error');
@@ -201,14 +205,38 @@ export default function GoalDetailScreen() {
     );
     try {
       await goalService.contributeGoal(goal.id, payload.amount, {
-        walletId: payload.sourceWalletId,
-        destinationWalletId: payload.targetWalletId,
+        sourceType: payload.sourceType,
+        walletId: payload.sourceType === 'WALLET' ? payload.sourceWalletId : null,
         note: `Setoran target ${goal.name}`,
       });
-      await refreshAllData();
-      showToast('Tabungan berhasil ditambahkan');
+      await Promise.all([refreshAllData(), loadDetailMutations()]);
+      showToast('Setoran tabungan berhasil dicatat');
     } catch (err) {
+      await refreshAllData();
       showToast(err instanceof Error ? err.message : 'Gagal menyetor tabungan', 'error');
+    }
+  };
+
+  const handleWithdraw = async (payload: GoalWithdrawPayload) => {
+    setGoals((prev) =>
+      prev.map((g) =>
+        g.id === goal.id
+          ? { ...g, current: Math.max(0, g.current - payload.amount) }
+          : g
+      )
+    );
+    try {
+      await goalService.withdrawGoal(goal.id, {
+        amount: payload.amount,
+        destinationType: payload.destinationType,
+        walletId: payload.destinationType === 'WALLET' ? payload.walletId : null,
+        note: `Penarikan dana ${goal.name}`,
+      });
+      await Promise.all([refreshAllData(), loadDetailMutations()]);
+      showToast('Penarikan dana tabungan berhasil dicatat');
+    } catch (err) {
+      await refreshAllData();
+      showToast(err instanceof Error ? err.message : 'Gagal menarik dana tabungan', 'error');
     }
   };
 
@@ -245,7 +273,7 @@ export default function GoalDetailScreen() {
         contentContainerStyle={{ paddingBottom: 100 + insets.bottom }}
       >
         <LinearGradient
-          colors={['#4B89FF', '#3B7AF5', '#2563EB']}
+          colors={goalPalette.gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={[styles.header, { paddingTop: Math.max(insets.top, 12) + 10 }]}
@@ -260,6 +288,9 @@ export default function GoalDetailScreen() {
               >
                 <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.2} />
               </Pressable>
+              <View style={styles.iconBtn}>
+                {renderGoalThemeIcon(goal.iconKey, '#FFFFFF', 18)}
+              </View>
               <Text style={styles.headerTitle} numberOfLines={1}>
                 {goal.name}
               </Text>
@@ -403,17 +434,106 @@ export default function GoalDetailScreen() {
           </View>
         </View>
 
+        {/* RIWAYAT MUTASI TABUNGAN */}
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>Riwayat Mutasi Tabungan</Text>
+          {mutations.length === 0 ? (
+            <View style={styles.emptyMutationCard}>
+              <Text style={styles.emptyMutationText}>
+                Belum ada riwayat setor atau tarik dana
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.kvCard}>
+              {mutations.map((m, idx) => {
+                const isDeposit = m.type === 'CONTRIBUTE';
+                const flowLabel =
+                  m.flowType === 'EXTERNAL'
+                    ? 'Dana Luar'
+                    : m.walletName || 'Dompet';
+                const d = new Date(m.createdAt);
+                const dateText = Number.isNaN(d.getTime())
+                  ? ''
+                  : `${d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                return (
+                  <View
+                    key={m.id}
+                    style={[
+                      styles.mutationRow,
+                      idx < mutations.length - 1 && styles.kvRowBorder,
+                    ]}
+                  >
+                    <View
+                      style={[
+                        styles.mutationIconBox,
+                        {
+                          backgroundColor: isDeposit
+                            ? Colors.incomeSoft
+                            : Colors.expenseSoft,
+                        },
+                      ]}
+                    >
+                      {isDeposit ? (
+                        <ArrowDownLeft
+                          size={16}
+                          color={Colors.income}
+                          strokeWidth={2.2}
+                        />
+                      ) : (
+                        <ArrowUpRight
+                          size={16}
+                          color={Colors.expense}
+                          strokeWidth={2.2}
+                        />
+                      )}
+                    </View>
+
+                    <View style={styles.mutationMid}>
+                      <Text style={styles.mutationTitle}>
+                        {isDeposit ? 'Setor Dana' : 'Tarik Dana'}
+                      </Text>
+                      <Text style={styles.mutationSub}>
+                        {flowLabel}
+                        {dateText ? ` ${dateText}` : ''}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={[
+                        styles.mutationAmount,
+                        Typography.tabularNums,
+                        { color: isDeposit ? '#10B981' : '#EF4444' },
+                      ]}
+                    >
+                      {isDeposit ? '+' : '-'}
+                      {formatIDR(m.amount)}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
         {/* KELOLA TARGET (MUDAH DIJANGKAU) */}
         <View style={styles.manageRow}>
           <Pressable
-            onPress={openEdit}
+            onPress={() =>
+              router.push(`/goal/form?id=${encodeURIComponent(goal.id)}` as Href)
+            }
             style={({ pressed }) => [styles.manageEditBtn, pressed && { opacity: 0.8 }]}
           >
             <Pencil size={16} color={Colors.primary} strokeWidth={2.1} />
             <Text style={styles.manageEditText}>Edit Target</Text>
           </Pressable>
           <Pressable
-            onPress={() => setConfirmDeleteOpen(true)}
+            onPress={() => {
+              if (goal.current > 0) {
+                setDeleteWithBalanceOpen(true);
+              } else {
+                setConfirmDeleteOpen(true);
+              }
+            }}
             style={({ pressed }) => [styles.manageDeleteBtn, pressed && { opacity: 0.8 }]}
           >
             <Trash2 size={16} color={Colors.expense} strokeWidth={2.1} />
@@ -429,26 +549,34 @@ export default function GoalDetailScreen() {
             <Check size={17} color={Colors.incomeText} strokeWidth={2.5} />
             <Text style={styles.completedBannerText}>Target Tabungan Selesai</Text>
           </View>
-        ) : isReadyToRealize ? (
-          <Pressable
-            onPress={() => setRealizeOpen(true)}
-            style={({ pressed }) => [
-              styles.primaryBtn,
-              { backgroundColor: Colors.income },
-              pressed && { opacity: 0.88 },
-            ]}
-          >
-            <Check size={18} color="#FFFFFF" strokeWidth={2.4} />
-            <Text style={styles.primaryBtnText}>Gunakan Dana</Text>
-          </Pressable>
         ) : (
-          <Pressable
-            onPress={() => setContributeOpen(true)}
-            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
-          >
-            <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
-            <Text style={styles.primaryBtnText}>Tambah Tabungan</Text>
-          </Pressable>
+          <View style={styles.ctaRow}>
+            <Pressable
+              onPress={() => setContributeOpen(true)}
+              style={({ pressed }) => [
+                styles.primaryBtn,
+                styles.ctaFlex,
+                pressed && { opacity: 0.88 },
+              ]}
+            >
+              <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
+              <Text style={styles.primaryBtnText}>Setor Dana</Text>
+            </Pressable>
+
+            <Pressable
+              disabled={goal.current <= 0}
+              onPress={() => setWithdrawOpen(true)}
+              style={({ pressed }) => [
+                styles.secondaryBtn,
+                styles.ctaFlex,
+                goal.current <= 0 && { opacity: 0.45 },
+                pressed && { opacity: 0.85 },
+              ]}
+            >
+              <ArrowUpRight size={18} color={Colors.primary} strokeWidth={2.3} />
+              <Text style={styles.secondaryBtnText}>Tarik Dana</Text>
+            </Pressable>
+          </View>
         )}
       </View>
 
@@ -457,8 +585,15 @@ export default function GoalDetailScreen() {
         wallets={wallets}
         contributingGoal={goal}
         onClose={() => setContributeOpen(false)}
-        onCreateGoal={() => {}}
         onContribute={(payload) => void handleContribute(payload)}
+      />
+
+      <WithdrawGoalSheet
+        visible={withdrawOpen}
+        goal={goal}
+        wallets={wallets}
+        onClose={() => setWithdrawOpen(false)}
+        onWithdraw={(payload) => void handleWithdraw(payload)}
       />
 
       <GoalRealizeSheet
@@ -469,38 +604,6 @@ export default function GoalDetailScreen() {
         onRealize={(payload) => void handleRealize(payload)}
       />
 
-      <BaseBottomSheet
-        visible={editOpen}
-        title="Edit Target Tabungan"
-        onClose={() => setEditOpen(false)}
-        footer={
-          <Pressable
-            onPress={() => void handleSaveEdit()}
-            style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
-          >
-            <Text style={styles.primaryBtnText}>Simpan Perubahan</Text>
-          </Pressable>
-        }
-      >
-        <Text style={styles.inputLabel}>Nama Target</Text>
-        <TextInput
-          style={styles.textInput}
-          value={editName}
-          onChangeText={setEditName}
-          placeholder="Nama target tabungan"
-          placeholderTextColor="#94A3B8"
-        />
-        <Text style={styles.inputLabel}>Nominal Target (Rp)</Text>
-        <TextInput
-          style={[styles.textInput, Typography.tabularNums]}
-          value={editTargetText}
-          onChangeText={(v) => setEditTargetText(formatThousands(v))}
-          keyboardType="numeric"
-          placeholder="0"
-          placeholderTextColor="#94A3B8"
-        />
-      </BaseBottomSheet>
-
       <ConfirmDialog
         visible={confirmDeleteOpen}
         title="Hapus Target Tabungan?"
@@ -509,6 +612,15 @@ export default function GoalDetailScreen() {
         variant="danger"
         onCancel={() => setConfirmDeleteOpen(false)}
         onConfirm={() => void handleDeleteGoal()}
+      />
+
+      <DeleteGoalSheet
+        visible={deleteWithBalanceOpen}
+        goalName={goal.name}
+        currentAmount={goal.current}
+        wallets={wallets}
+        onClose={() => setDeleteWithBalanceOpen(false)}
+        onConfirmDelete={(refundToWalletId) => void handleDeleteGoal(refundToWalletId)}
       />
     </View>
   );
@@ -836,5 +948,91 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semibold,
     fontSize: 13.5,
     color: Colors.expense,
+  },
+  sectionBlock: {
+    marginHorizontal: 18,
+    marginTop: 18,
+    gap: 10,
+  },
+  sectionTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  kvCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E8EDF5',
+    overflow: 'hidden',
+  },
+  emptyMutationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E8EDF5',
+    padding: 18,
+    alignItems: 'center',
+  },
+  emptyMutationText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  mutationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  mutationIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mutationMid: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  mutationTitle: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13.5,
+    color: Colors.textPrimary,
+  },
+  mutationSub: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12,
+    color: Colors.textMuted,
+  },
+  mutationAmount: {
+    fontFamily: FontFamily.bold,
+    fontSize: 13.5,
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  ctaFlex: {
+    flex: 1,
+  },
+  secondaryBtn: {
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+  },
+  secondaryBtnText: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14.5,
+    color: Colors.primary,
   },
 });

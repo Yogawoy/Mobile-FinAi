@@ -1,20 +1,19 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Wifi } from 'lucide-react-native';
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
-import Svg, { Defs, LinearGradient as SvgGradient, Path, Rect, Stop } from 'react-native-svg';
 import { WalletBrandLogo } from '@/components/ui/WalletBrandLogo';
 import { formatIDR } from '@/lib/format';
 import { type WalletItem } from '@/lib/mockData';
 import { useResponsive } from '@/lib/responsive';
 import { getWalletTheme } from '@/lib/walletTheme';
 import { FontFamily, Motion, Typography } from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Wifi } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
+import Svg, { Defs, Path, Rect, Stop, LinearGradient as SvgGradient } from 'react-native-svg';
 
 interface RealisticWalletCardProps {
   wallet: WalletItem;

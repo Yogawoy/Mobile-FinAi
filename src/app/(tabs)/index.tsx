@@ -90,6 +90,7 @@ export default function HomeTabScreen() {
     userProfile,
     wallets,
     budgets,
+    goals,
     transactions,
     hasCompletedSetup,
     hasSeenTutorial,
@@ -251,6 +252,10 @@ export default function HomeTabScreen() {
   const totalBalance = useMemo(
     () => wallets.reduce((sum, w) => sum + w.balance, 0),
     [wallets]
+  );
+  const totalSavingsBalance = useMemo(
+    () => goals.reduce((sum, g) => sum + g.current, 0),
+    [goals]
   );
 
   const totalBudgetLimit = useMemo(
@@ -494,7 +499,7 @@ export default function HomeTabScreen() {
           <View ref={balanceRef} collapsable={false} style={styles.balanceRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.balanceLabel}>
-                Total Saldo ({wallets.length} Dompet)
+                Saldo Siap Pakai ({wallets.length} Dompet)
               </Text>
               <View style={styles.balanceValueRow}>
                 <Text
@@ -518,6 +523,21 @@ export default function HomeTabScreen() {
                   )}
                 </Pressable>
               </View>
+
+              <Pressable
+                onPress={() =>
+                  router.push({ pathname: '/(tabs)/budgets', params: { tab: 'goals' } })
+                }
+                accessibilityRole="button"
+                accessibilityLabel="Lihat Saldo Tabungan"
+                style={({ pressed }) => [styles.savingsInlinePill, pressed && { opacity: 0.78 }]}
+              >
+                <Text style={styles.savingsInlineLabel}>Tabungan</Text>
+                <Text style={[styles.savingsInlineValue, Typography.tabularNums]}>
+                  {hideBalance ? 'Rp ••••••••' : formatIDR(totalSavingsBalance)}
+                </Text>
+                <ChevronRight size={13} color="rgba(255,255,255,0.85)" strokeWidth={2.2} />
+              </Pressable>
             </View>
 
             <Pressable
@@ -1077,6 +1097,29 @@ const styles = StyleSheet.create({
   quickRecordText: {
     fontFamily: FontFamily.semibold,
     fontSize: 12.5,
+    color: '#FFFFFF',
+  },
+  savingsInlinePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 99,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  savingsInlineLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11.5,
+    color: 'rgba(255,255,255,0.85)',
+  },
+  savingsInlineValue: {
+    fontFamily: FontFamily.bold,
+    fontSize: 12,
     color: '#FFFFFF',
   },
   actionGrid: {

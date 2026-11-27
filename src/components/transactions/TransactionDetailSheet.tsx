@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Pencil, Trash2 } from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { formatIDR } from '@/lib/format';
 import { type TransactionItem } from '@/lib/mockData';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+import { Pencil, Trash2 } from 'lucide-react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 interface TransactionDetailSheetProps {
   visible: boolean;
@@ -33,27 +33,27 @@ export function TransactionDetailSheet({
 
   const badgeConfig = isIncome
     ? {
-        label: 'Pemasukan',
-        bg: Colors.incomeSoft,
-        color: Colors.incomeText,
-        amountColor: Colors.income,
-        prefix: '+',
-      }
+      label: 'Pemasukan',
+      bg: Colors.incomeSoft,
+      color: Colors.incomeText,
+      amountColor: Colors.income,
+      prefix: '+',
+    }
     : isTransfer
       ? {
-          label: 'Transfer',
-          bg: Colors.primarySoft,
-          color: Colors.primaryDark,
-          amountColor: Colors.primary,
-          prefix: '',
-        }
+        label: 'Transfer',
+        bg: Colors.primarySoft,
+        color: Colors.primaryDark,
+        amountColor: Colors.primary,
+        prefix: '',
+      }
       : {
-          label: 'Pengeluaran',
-          bg: Colors.expenseSoft,
-          color: Colors.expenseText,
-          amountColor: Colors.expense,
-          prefix: '-',
-        };
+        label: 'Pengeluaran',
+        bg: Colors.expenseSoft,
+        color: Colors.expenseText,
+        amountColor: Colors.expense,
+        prefix: '-',
+      };
 
   const walletDisplay =
     isTransfer && transaction.targetWalletName
@@ -61,7 +61,7 @@ export function TransactionDetailSheet({
       : transaction.walletName;
 
   const dateDisplay = transaction.dateGroup
-    ? `${transaction.dateGroup}, ${transaction.dateLabel}`
+    ? `${transaction.dateGroup} ${transaction.dateLabel}`
     : transaction.dateLabel;
 
   return (
@@ -164,7 +164,7 @@ function DetailRow({
   return (
     <View style={[styles.detailRow, multiline && styles.detailRowTop]}>
       <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue} numberOfLines={multiline ? 3 : 1}>
+      <Text style={styles.detailValue} numberOfLines={multiline ? 3 : 2}>
         {value}
       </Text>
     </View>

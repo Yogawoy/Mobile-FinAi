@@ -1,11 +1,6 @@
 import {
-  BudgetFormSheet,
-  type BudgetFormSubmitPayload,
-} from '@/components/budgets/BudgetFormSheet';
-import {
   GoalFormSheet,
   type GoalContributePayload,
-  type GoalCreatePayload,
 } from '@/components/budgets/GoalFormSheet';
 import {
   GoalRealizeSheet,
@@ -15,6 +10,7 @@ import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
 import { calculateGoalRecommendation } from '@/lib/goalCalculator';
+import { getGoalColorPalette, renderGoalThemeIcon } from '@/lib/goalTheme';
 import {
   type BudgetIconKey,
   type BudgetItem,
@@ -194,8 +190,6 @@ export default function BudgetsTabScreen() {
     refreshAllData,
   } = useFinance();
 
-  const [budgetSheetVisible, setBudgetSheetVisible] = useState(false);
-  const [editingBudget, setEditingBudget] = useState<BudgetItem | null>(null);
   const [periodFilter, setPeriodFilter] = useState<'ALL' | BudgetPeriod>('ALL');
 
   const filteredBudgets = useMemo(() => {
@@ -262,118 +256,9 @@ export default function BudgetsTabScreen() {
 
   const handleHeaderAdd = () => {
     if (activeTab === 'BUDGETS') {
-      setEditingBudget(null);
-      setBudgetSheetVisible(true);
+      router.push('/budget/form');
     } else {
-      setContributingGoal(null);
-      setGoalSheetVisible(true);
-    }
-  };
-
-  const handleBudgetSubmit = async (payload: BudgetFormSubmitPayload) => {
-    const now = new Date();
-    const matchedCat = categories.find(
-      (c) => c.type === 'EXPENSE' && c.label.toLowerCase() === payload.name.toLowerCase()
-    ) ?? categories.find((c) => c.type === 'EXPENSE');
-
-    if (payload.id) {
-      setBudgets((prev) =>
-        prev.map((b) =>
-          b.id === payload.id
-            ? {
-              ...b,
-              name: payload.name,
-              iconKey: payload.iconKey,
-              limit: payload.limit,
-              alertThresholdPct: payload.alertThresholdPct,
-              period: payload.period,
-            }
-            : b
-        )
-      );
-      if (matchedCat) {
-        try {
-          await budgetService.upsertBudget({
-            categoryId: matchedCat.id,
-            month: now.getMonth() + 1,
-            year: now.getFullYear(),
-            period: payload.period,
-            limitAmount: payload.limit,
-            alertThresholdPct: payload.alertThresholdPct,
-          });
-          await refreshAllData();
-        } catch (err) {
-          showToast(err instanceof Error ? err.message : 'Gagal memperbarui anggaran', 'error');
-        }
-      }
-      return;
-    }
-
-    const newBudget: BudgetItem = {
-      id: `bdg-${Date.now()}`,
-      name: payload.name,
-      iconKey: payload.iconKey,
-      spent: 0,
-      limit: payload.limit,
-      alertThresholdPct: payload.alertThresholdPct,
-      period: payload.period,
-    };
-    setBudgets((prev) => [newBudget, ...prev]);
-    if (matchedCat) {
-      try {
-        await budgetService.upsertBudget({
-          categoryId: matchedCat.id,
-          month: now.getMonth() + 1,
-          year: now.getFullYear(),
-          period: payload.period,
-          limitAmount: payload.limit,
-          alertThresholdPct: payload.alertThresholdPct,
-        });
-        await refreshAllData();
-      } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Gagal menyimpan anggaran', 'error');
-      }
-    }
-  };
-
-  const handleBudgetDelete = async (budget: BudgetItem) => {
-    setBudgets((prev) => prev.filter((b) => b.id !== budget.id));
-    try {
-      await budgetService.deleteBudget(budget.id);
-      await refreshAllData();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Gagal menghapus anggaran', 'error');
-    }
-  };
-
-  const handleGoalCreate = async (payload: GoalCreatePayload) => {
-    const newGoal: GoalItem = {
-      id: `goal-${Date.now()}`,
-      name: payload.name,
-      iconKey: payload.iconKey,
-      current: 0,
-      target: payload.target,
-      deadline: payload.deadline,
-      walletId: payload.walletId,
-      walletName: payload.walletName,
-      frequency: payload.frequency,
-      isRealized: false,
-    };
-    setGoals((prev) => [newGoal, ...prev]);
-    try {
-      const parsedDate = Date.parse(payload.deadline);
-      const isoDeadline = Number.isNaN(parsedDate)
-        ? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString()
-        : new Date(parsedDate).toISOString();
-      await goalService.createGoal({
-        name: payload.name,
-        targetAmount: payload.target,
-        currentAmount: 0,
-        deadline: isoDeadline,
-      });
-      await refreshAllData();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Gagal membuat target tabungan', 'error');
+      router.push('/goal/form');
     }
   };
 
@@ -386,32 +271,14 @@ export default function BudgetsTabScreen() {
       )
     );
 
-    if (payload.sourceWalletId !== payload.targetWalletId) {
-      const sourceWallet = wallets.find((w) => w.id === payload.sourceWalletId);
-      const targetWallet = wallets.find((w) => w.id === payload.targetWalletId);
-      recordTransaction({
-        title: `Setor Target Tabungan`,
-        categoryKey: 'wallet',
-        categoryLabel: 'Transfer',
-        walletId: payload.sourceWalletId,
-        walletName: sourceWallet?.name || 'Dompet',
-        targetWalletId: payload.targetWalletId,
-        targetWalletName: targetWallet?.name,
-        dateLabel: 'Baru saja',
-        amount: payload.amount,
-        type: 'TRANSFER',
-        iconBg: '#EBF2FF',
-        iconColor: '#3B7AF5',
-      });
-    }
-
     try {
       await goalService.contributeGoal(payload.goalId, payload.amount, {
-        walletId: payload.sourceWalletId,
-        destinationWalletId: payload.targetWalletId,
+        sourceType: payload.sourceType,
+        walletId: payload.sourceType === 'WALLET' ? payload.sourceWalletId : null,
         note: 'Setoran target tabungan',
       });
       await refreshAllData();
+      showToast(`Setoran ${formatIDR(payload.amount)} berhasil disimpan`);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Gagal menyetor ke target', 'error');
     }
@@ -888,6 +755,7 @@ export default function BudgetsTabScreen() {
                 goal.frequency
               );
 
+              const palette = getGoalColorPalette(goal.colorKey);
               return (
                 <Animated.View
                   key={goal.id}
@@ -917,17 +785,17 @@ export default function BudgetsTabScreen() {
                                 ? '#F1F5F9'
                                 : isDone
                                   ? Colors.incomeSoft
-                                  : Colors.primarySoft,
+                                  : palette.softBg,
                             },
                           ]}
                         >
-                          {renderGoalIcon(
+                          {renderGoalThemeIcon(
                             goal.iconKey,
                             isRealized
                               ? Colors.textMuted
                               : isDone
                                 ? Colors.income
-                                : Colors.primary
+                                : palette.primary
                           )}
                         </View>
                         <View style={{ flex: 1 }}>
@@ -1001,7 +869,7 @@ export default function BudgetsTabScreen() {
                     <View style={styles.cardProgressTrack}>
                       <AnimatedProgressFill
                         pct={pct}
-                        color={isDone ? Colors.income : Colors.primary}
+                        color={isDone ? Colors.income : palette.primary}
                         height={7}
                       />
                     </View>
@@ -1027,18 +895,7 @@ export default function BudgetsTabScreen() {
         </View>
       </ScrollView>
 
-      {/* BUDGET FORM SHEET */}
-      <BudgetFormSheet
-        visible={budgetSheetVisible}
-        editingBudget={editingBudget}
-        onClose={() => {
-          setBudgetSheetVisible(false);
-        }}
-        onSubmit={handleBudgetSubmit}
-        onDelete={handleBudgetDelete}
-      />
-
-      {/* GOAL FORM / CONTRIBUTE SHEET */}
+      {/* GOAL CONTRIBUTE SHEET */}
       <GoalFormSheet
         visible={goalSheetVisible}
         wallets={wallets}
@@ -1047,7 +904,7 @@ export default function BudgetsTabScreen() {
           setGoalSheetVisible(false);
           setContributingGoal(null);
         }}
-        onCreateGoal={handleGoalCreate}
+        onCreateGoal={() => {}}
         onContribute={handleGoalContribute}
       />
 

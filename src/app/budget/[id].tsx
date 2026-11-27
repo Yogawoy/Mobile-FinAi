@@ -1,27 +1,3 @@
-import React, { useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import {
-  ArrowLeft,
-  Pencil,
-  Plus,
-  Receipt,
-  Trash2,
-} from 'lucide-react-native';
-import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  BudgetFormSheet,
-  type BudgetFormSubmitPayload,
-} from '@/components/budgets/BudgetFormSheet';
 import {
   QuickTransactionSheet,
   type QuickTransactionSubmitPayload,
@@ -34,6 +10,26 @@ import { formatIDR } from '@/lib/format';
 import { type BudgetPeriod, type TransactionItem } from '@/lib/mockData';
 import { budgetService } from '@/services/budget.service';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import {
+  ArrowLeft,
+  Pencil,
+  Plus,
+  Receipt,
+  Trash2,
+} from 'lucide-react-native';
+import { useMemo, useState } from 'react';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function getPeriodBounds(period: BudgetPeriod): { start: Date; end: Date } {
   const now = new Date();
@@ -83,7 +79,6 @@ export default function BudgetDetailScreen() {
 
   const budget = budgets.find((b) => b.id === id);
 
-  const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [txSheetOpen, setTxSheetOpen] = useState(false);
   const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
@@ -134,41 +129,6 @@ export default function BudgetDetailScreen() {
 
   const txCount = categoryTransactions.length;
   const avgSpend = txCount > 0 ? Math.round(budget.spent / txCount) : 0;
-
-  const handleUpdateBudget = async (payload: BudgetFormSubmitPayload) => {
-    const now = new Date();
-    setBudgets((prev) =>
-      prev.map((b) =>
-        b.id === budget.id
-          ? {
-              ...b,
-              name: payload.name,
-              iconKey: payload.iconKey,
-              limit: payload.limit,
-              alertThresholdPct: payload.alertThresholdPct,
-              period: payload.period,
-            }
-          : b
-      )
-    );
-    const matchedCat = categories.find(
-      (c) => c.type === 'EXPENSE' && c.label.toLowerCase() === payload.name.toLowerCase()
-    );
-    try {
-      await budgetService.upsertBudget({
-        categoryId: matchedCat?.id,
-        categoryName: matchedCat ? undefined : payload.name,
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
-        period: payload.period,
-        limitAmount: payload.limit,
-        alertThresholdPct: payload.alertThresholdPct,
-      });
-      await refreshAllData();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Gagal memperbarui anggaran', 'error');
-    }
-  };
 
   const handleDeleteBudget = async () => {
     setConfirmDeleteOpen(false);
@@ -357,7 +317,9 @@ export default function BudgetDetailScreen() {
         {/* KELOLA ANGGARAN (MUDAH DIJANGKAU) */}
         <View style={styles.manageRow}>
           <Pressable
-            onPress={() => setEditSheetOpen(true)}
+            onPress={() =>
+              router.push(`/budget/form?id=${encodeURIComponent(budget.id)}` as Href)
+            }
             style={({ pressed }) => [styles.manageEditBtn, pressed && { opacity: 0.8 }]}
           >
             <Pencil size={16} color={Colors.primary} strokeWidth={2.1} />
@@ -386,14 +348,6 @@ export default function BudgetDetailScreen() {
           <Text style={styles.primaryBtnText}>Catat Pengeluaran</Text>
         </Pressable>
       </View>
-
-      <BudgetFormSheet
-        visible={editSheetOpen}
-        editingBudget={budget}
-        onClose={() => setEditSheetOpen(false)}
-        onSubmit={(payload) => void handleUpdateBudget(payload)}
-        onDelete={() => setConfirmDeleteOpen(true)}
-      />
 
       <ConfirmDialog
         visible={confirmDeleteOpen}
