@@ -8,7 +8,11 @@ import {
 import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
-import { getMonthDateRange } from '../budgets/budgets.service';
+import {
+  getBudgetDateRange,
+  getBudgetPeriodLabel,
+  getMonthDateRangeWib as getMonthDateRange,
+} from '../../utils/budgetWindow';
 import type {
   CreateTransactionInput,
   UpdateTransactionInput,
@@ -51,20 +55,20 @@ function serializeTransaction(
     },
     destinationWallet: tx.destinationWallet
       ? {
-          id: tx.destinationWallet.id,
-          name: tx.destinationWallet.name,
-          type: tx.destinationWallet.type,
-          color: tx.destinationWallet.color,
-        }
+        id: tx.destinationWallet.id,
+        name: tx.destinationWallet.name,
+        type: tx.destinationWallet.type,
+        color: tx.destinationWallet.color,
+      }
       : null,
     category: tx.category
       ? {
-          id: tx.category.id,
-          name: tx.category.name,
-          type: tx.category.type,
-          icon: tx.category.icon,
-          color: tx.category.color,
-        }
+        id: tx.category.id,
+        name: tx.category.name,
+        type: tx.category.type,
+        icon: tx.category.icon,
+        color: tx.category.color,
+      }
       : null,
   };
 }
@@ -141,13 +145,16 @@ async function checkAndCreateBudgetAlert(
 
   if (!budget) return;
 
-  const { start, end } = getMonthDateRange(month, year);
+  const { start, end } = getBudgetDateRange(budget.period, month, year, transactionDate);
+  const effectiveStart =
+    budget.resetAt && budget.resetAt > start ? budget.resetAt : start;
+  const periodLabelLower = getBudgetPeriodLabel(budget.period).toLowerCase();
   const agg = await tx.transaction.aggregate({
     where: {
       userId,
       categoryId,
       type: TransactionType.EXPENSE,
-      transactionDate: { gte: start, lt: end },
+      transactionDate: { gte: effectiveStart, lt: end },
     },
     _sum: { amount: true },
   });
@@ -164,8 +171,8 @@ async function checkAndCreateBudgetAlert(
   const deviationPct = Math.max(0, Math.round((pct - 100) * 10) / 10);
 
   const message = isOver
-    ? `Pengeluaran kategori "${budget.category.name}" mencapai ${roundedPct}% (melebihi batas Rp ${limitAmount.toLocaleString('id-ID')}).`
-    : `Pengeluaran kategori "${budget.category.name}" sudah mencapai ${roundedPct}% dari batas anggaran.`;
+    ? `Pengeluaran kategori "${budget.category.name}" ${periodLabelLower} mencapai ${roundedPct}% (melebihi batas Rp ${limitAmount.toLocaleString('id-ID')}).`
+    : `Pengeluaran kategori "${budget.category.name}" ${periodLabelLower} sudah mencapai ${roundedPct}% dari batas anggaran.`;
 
   await tx.spendingAnomaly.create({
     data: {
@@ -411,10 +418,10 @@ export async function updateTransaction(
   const nextDestWalletId =
     nextType === TransactionType.TRANSFER
       ? (input.destinationWalletId !== undefined
-          ? input.destinationWalletId
-          : input.destination_wallet_id !== undefined
-            ? input.destination_wallet_id
-            : existing.destinationWalletId)
+        ? input.destinationWalletId
+        : input.destination_wallet_id !== undefined
+          ? input.destination_wallet_id
+          : existing.destinationWalletId)
       : null;
 
   if (nextType === TransactionType.TRANSFER) {

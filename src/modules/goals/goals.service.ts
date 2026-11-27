@@ -1,4 +1,4 @@
-import { GoalStatus, NotificationType, type FinancialGoal } from '@prisma/client';
+import { GoalStatus, NotificationType, TransactionType, type FinancialGoal } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
@@ -122,12 +122,76 @@ export async function contributeGoal(
     throw new AppError('Target tabungan yang dibatalkan tidak dapat disetor', 400);
   }
 
-  const nextAmount = Number(existing.currentAmount) + input.amount;
+  const currentAmount = Number(existing.currentAmount);
   const targetAmount = Number(existing.targetAmount);
+  const remaining = Math.max(0, targetAmount - currentAmount);
+
+  if (existing.status === GoalStatus.COMPLETED || remaining <= 0) {
+    throw new AppError('Target tabungan ini sudah tercapai 100%', 400);
+  }
+
+  if (input.amount > remaining) {
+    throw new AppError(
+      `Nominal setoran melebihi sisa kekurangan target (maksimal Rp ${remaining.toLocaleString('id-ID')})`,
+      400
+    );
+  }
+
+  const nextAmount = currentAmount + input.amount;
   const reachedTarget = nextAmount >= targetAmount;
   const nextStatus = reachedTarget ? GoalStatus.COMPLETED : GoalStatus.ACTIVE;
 
   const updated = await prisma.$transaction(async (tx) => {
+    if (input.walletId) {
+      const debited = await tx.wallet.updateMany({
+        where: {
+          id: input.walletId,
+          userId,
+          isArchived: false,
+          currentBalance: { gte: input.amount },
+        },
+        data: { currentBalance: { decrement: input.amount } },
+      });
+
+      if (debited.count === 0) {
+        throw new AppError(
+          'Saldo dompet asal tidak mencukupi atau dompet tidak ditemukan',
+          400
+        );
+      }
+
+      const isTransfer = Boolean(
+        input.destinationWalletId && input.destinationWalletId !== input.walletId
+      );
+
+      if (isTransfer && input.destinationWalletId) {
+        const credited = await tx.wallet.updateMany({
+          where: {
+            id: input.destinationWalletId,
+            userId,
+            isArchived: false,
+          },
+          data: { currentBalance: { increment: input.amount } },
+        });
+        if (credited.count === 0) {
+          throw new AppError('Dompet tujuan tabungan tidak ditemukan', 404);
+        }
+      }
+
+      await tx.transaction.create({
+        data: {
+          userId,
+          walletId: input.walletId,
+          destinationWalletId: isTransfer ? input.destinationWalletId! : null,
+          categoryId: null,
+          type: isTransfer ? TransactionType.TRANSFER : TransactionType.EXPENSE,
+          amount: input.amount,
+          note: input.note?.trim() || `Setoran target ${existing.name}`,
+          transactionDate: new Date(),
+        },
+      });
+    }
+
     const goal = await tx.financialGoal.update({
       where: { id: goalId },
       data: {

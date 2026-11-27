@@ -1,6 +1,10 @@
 import { RiskLevel, TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
-import { getMonthDateRange } from '../budgets/budgets.service';
+import {
+  getDaysInMonth,
+  getMonthDateRangeWib,
+  toMonthlyEquivalent,
+} from '../../utils/budgetWindow';
 import { detectAndPersistAnomalies } from './anomaly.service';
 import { computeSawHealth } from './saw.service';
 
@@ -9,8 +13,8 @@ export async function computeAndSaveForecast(
   month: number,
   year: number
 ) {
-  const { start, end } = getMonthDateRange(month, year);
-  const totalDaysInMonth = new Date(year, month, 0).getDate();
+  const { start, end } = getMonthDateRangeWib(month, year);
+  const totalDaysInMonth = getDaysInMonth(month, year);
   const today = new Date();
   const isCurrentPeriod =
     month === today.getMonth() + 1 && year === today.getFullYear();
@@ -94,7 +98,11 @@ export async function computeAndSaveForecast(
 
   // Budget pacing
   const budgetedCatIds = new Set(budgets.map((b) => b.categoryId));
-  const totalBudgetLimit = budgets.reduce((s, b) => s + Number(b.limitAmount), 0);
+  const totalBudgetLimit = budgets.reduce(
+    (s, b) =>
+      s + toMonthlyEquivalent(Number(b.limitAmount), b.period, totalDaysInMonth),
+    0
+  );
   const totalBudgetSpent = monthTransactions.reduce((s, tx) => {
     if (
       tx.type === TransactionType.EXPENSE &&

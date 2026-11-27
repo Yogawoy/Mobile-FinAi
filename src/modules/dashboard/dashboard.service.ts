@@ -1,7 +1,11 @@
 import { TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
+import {
+  getDaysInMonth,
+  getMonthDateRangeWib,
+  toMonthlyEquivalent,
+} from '../../utils/budgetWindow';
 import { computeSawHealth } from '../ai/saw.service';
-import { getMonthDateRange } from '../budgets/budgets.service';
 
 const MONTH_SHORT_ID = [
   'Jan',
@@ -23,7 +27,7 @@ export async function getDashboardSummary(
   month: number,
   year: number
 ) {
-  const { start, end } = getMonthDateRange(month, year);
+  const { start, end } = getMonthDateRangeWib(month, year);
   const sixMonthsStart = new Date(year, month - 6, 1, 0, 0, 0, 0);
 
   const [
@@ -193,7 +197,8 @@ export async function getDashboardSummary(
 
   const budgetedCategoryIds = new Set(budgets.map((b) => b.categoryId));
   const totalBudgetLimit = budgets.reduce(
-    (sum, b) => sum + Number(b.limitAmount),
+    (sum, b) =>
+      sum + toMonthlyEquivalent(Number(b.limitAmount), b.period, daysInMonth),
     0
   );
   const totalBudgetSpent = monthTransactions.reduce((sum, tx) => {

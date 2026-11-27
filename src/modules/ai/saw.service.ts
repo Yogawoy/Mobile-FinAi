@@ -1,6 +1,10 @@
 import { TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
-import { getMonthDateRange } from '../budgets/budgets.service';
+import {
+  getDaysInMonth,
+  getMonthDateRangeWib,
+  toMonthlyEquivalent,
+} from '../../utils/budgetWindow';
 
 export type SawClassification =
   | 'INSUFFICIENT_DATA'
@@ -49,7 +53,8 @@ export async function computeSawHealth(
   month: number,
   year: number
 ): Promise<SawHealthResult> {
-  const { start, end } = getMonthDateRange(month, year);
+  const { start, end } = getMonthDateRangeWib(month, year);
+  const daysInMonth = getDaysInMonth(month, year);
 
   const [user, monthTransactions, activeWallets, budgets] = await Promise.all([
     prisma.user.findUnique({
@@ -70,7 +75,7 @@ export async function computeSawHealth(
     }),
     prisma.budget.findMany({
       where: { userId, month, year },
-      select: { limitAmount: true },
+      select: { limitAmount: true, period: true },
     }),
   ]);
 
@@ -107,7 +112,8 @@ export async function computeSawHealth(
     0
   );
   const totalBudgetLimit = budgets.reduce(
-    (sum, b) => sum + Number(b.limitAmount),
+    (sum, b) =>
+      sum + toMonthlyEquivalent(Number(b.limitAmount), b.period, daysInMonth),
     0
   );
 

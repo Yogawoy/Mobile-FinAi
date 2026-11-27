@@ -4,6 +4,7 @@ import { prisma } from '../../config/prisma';
 import { logAudit } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
 import { getMonthDateRange, listBudgets } from '../budgets/budgets.service';
+import { buildAdvisorSystemInstruction } from './ai.prompts';
 import { computeAndSaveForecast } from './forecast.service';
 import { computeSawHealth } from './saw.service';
 
@@ -112,21 +113,10 @@ export async function generateAdvisorInsight(
     })),
   };
 
-  const systemInstruction = [
-    'Anda adalah FinAI, penasihat keuangan pribadi profesional berbahasa Indonesia.',
-    'Analisis snapshot keuangan pengguna secara objektif, ringkas, dan dapat langsung ditindaklanjuti.',
-    'Gunakan angka skor SAW deterministik dari snapshot `sawHealth` jika tersedia (jangan mengarang skor baru).',
-    'Kembalikan HANYA JSON valid dengan skema persis:',
-    '{',
-    `  "health_score": ${sawHealth.healthScore ?? 0},`,
-    `  "status_label": "${sawHealth.statusLabel}",`,
-    '  "executive_summary": string (2-3 kalimat ringkas),',
-    '  "waste_highlights": string[] (maksimal 3 temuan pemborosan utama),',
-    '  "actionable_recommendations": [',
-    '    { "title": string, "detail": string, "estimated_saving": string }',
-    '  ] (tepat 3 rekomendasi konkret dalam Bahasa Indonesia)',
-    '}',
-  ].join('\n');
+  const systemInstruction = buildAdvisorSystemInstruction({
+    healthScore: sawHealth.healthScore ?? 0,
+    statusLabel: sawHealth.statusLabel,
+  });
 
   const prompt = `Analisis data keuangan bulan ${month}/${year} berikut:\n${JSON.stringify(inputSnapshot)}`;
 

@@ -25,6 +25,9 @@ export const updateGoalSchema = z.object({
 
 export const contributeGoalSchema = z.object({
   amount: z.number().positive('Nominal setoran harus lebih dari 0'),
+  walletId: z.string().trim().optional().nullable(),
+  destinationWalletId: z.string().trim().optional().nullable(),
+  note: z.string().trim().max(255).optional(),
 });
 
 export const goalIdParamSchema = z.object({
