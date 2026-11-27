@@ -196,11 +196,55 @@ export interface BackendAdvisorResponse {
   generatedAt: string;
 }
 
+export interface ChatActionCard {
+  type: 'ACTION_CARD';
+  badge: string;
+  accent: 'blue' | 'green' | 'red' | 'amber';
+  title: string;
+  amount: number;
+  rows: Array<{ label: string; value: string }>;
+  detailRoute?: { type: 'transaction' | 'budget' | 'goal'; id: string };
+}
+
+export interface ChatSummaryCard {
+  type: 'SUMMARY_CARD';
+  title: string;
+  metrics: Array<{
+    label: string;
+    value: string;
+    tone?: 'default' | 'green' | 'red' | 'blue';
+  }>;
+  items?: Array<{
+    id?: string;
+    label: string;
+    value: string;
+    status?: string;
+    periodLabel?: 'Harian' | 'Mingguan' | 'Bulanan' | string;
+    usableText?: string;
+    usageText?: string;
+    tone?: 'green' | 'amber' | 'red';
+    isExceeded?: boolean;
+  }>;
+  tip?: string;
+}
+
+export interface ChatChoiceCard {
+  type: 'CHOICE_CARD';
+  title: string;
+  options: Array<{ label: string; sublabel?: string; messageToSend: string }>;
+}
+
+export type ChatStructuredCard =
+  | ChatActionCard
+  | ChatSummaryCard
+  | ChatChoiceCard;
+
 export interface BackendChatResponse {
   reply: string;
   intent?:
     | 'CREATE_TRANSACTION'
     | 'TRANSFER'
+    | 'CREATE_GOAL'
     | 'GOAL_CONTRIBUTE'
     | 'DELETE_GOAL'
     | 'UPSERT_BUDGET'
@@ -229,6 +273,7 @@ export interface BackendChatResponse {
     | 'TRANSACTION_CREATED'
     | null;
   cardData: AiTransactionCardData | null;
+  card?: ChatStructuredCard | null;
 }
 
 export const aiService = {

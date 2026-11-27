@@ -670,6 +670,11 @@ export default function BudgetsTabScreen() {
                           <Text style={styles.cardTitle} numberOfLines={1}>
                             {budget.name}
                           </Text>
+                          {budget.customName && budget.categoryName ? (
+                            <Text style={styles.cardCategorySub} numberOfLines={1}>
+                              {budget.categoryName}
+                            </Text>
+                          ) : null}
                           <Text
                             style={[
                               styles.cardSubMicro,
@@ -1137,6 +1142,12 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semibold,
     fontSize: 14.5,
     color: Colors.textPrimary,
+  },
+  cardCategorySub: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11.5,
+    color: Colors.textSecondary,
+    marginTop: 1,
   },
   cardSubMicro: {
     fontFamily: FontFamily.regular,

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Mail } from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Colors, FontFamily } from '@/theme/tokens';
 
@@ -64,7 +65,8 @@ export function ForgotPasswordSheet({
       <Text style={styles.label}>Alamat Email</Text>
       <View style={[styles.inputBox, error && styles.inputBoxError]}>
         <Mail size={18} color={Colors.primary} strokeWidth={1.9} />
-        <TextInput
+        <FocusTextInput
+          showFocusBorder={false}
           style={styles.input}
           placeholder="nama@email.com"
           placeholderTextColor="#94A3B8"

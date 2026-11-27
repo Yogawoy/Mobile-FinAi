@@ -1,8 +1,3 @@
-import {
-  QuickTransactionSheet,
-  type QuickTransactionSubmitPayload,
-} from '@/components/transactions/QuickTransactionSheet';
-import { TransactionDetailSheet } from '@/components/transactions/TransactionDetailSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
@@ -80,9 +75,6 @@ export default function BudgetDetailScreen() {
   const budget = budgets.find((b) => b.id === id);
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [txSheetOpen, setTxSheetOpen] = useState(false);
-  const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
-  const [detailTx, setDetailTx] = useState<TransactionItem | null>(null);
 
   const bPeriod: BudgetPeriod = budget?.period ?? 'MONTHLY';
   const periodShort =
@@ -90,7 +82,7 @@ export default function BudgetDetailScreen() {
 
   const categoryTransactions = useMemo(() => {
     if (!budget) return [];
-    const targetName = budget.name.toLowerCase();
+    const targetName = (budget.categoryName ?? budget.name).toLowerCase();
     return transactions.filter((tx) => {
       if (tx.type !== 'EXPENSE') return false;
       const matchesCat =
@@ -143,42 +135,6 @@ export default function BudgetDetailScreen() {
     }
   };
 
-  const handleTxSubmit = (payload: QuickTransactionSubmitPayload) => {
-    if (payload.id && editingTx) {
-      updateTransaction({
-        ...editingTx,
-        type: payload.mode,
-        amount: payload.amount,
-        walletId: payload.walletId,
-        targetWalletId: payload.targetWalletId,
-        categoryKey: payload.category.key,
-        categoryLabel: payload.category.label,
-        note: payload.note,
-      });
-      setEditingTx(null);
-      return;
-    }
-    const chosenWallet = wallets.find((w) => w.id === payload.walletId);
-    const targetWallet = payload.targetWalletId
-      ? wallets.find((w) => w.id === payload.targetWalletId)
-      : undefined;
-    recordTransaction({
-      type: payload.mode,
-      title: payload.note || payload.category.label,
-      amount: payload.amount,
-      walletId: payload.walletId,
-      walletName: chosenWallet?.name ?? 'Dompet',
-      targetWalletId: payload.targetWalletId,
-      targetWalletName: targetWallet?.name,
-      categoryKey: payload.category.key,
-      categoryLabel: payload.category.label,
-      note: payload.note,
-      dateLabel: 'Hari Ini',
-      iconBg: payload.category.iconBg,
-      iconColor: payload.category.iconColor,
-    });
-  };
-
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
@@ -212,6 +168,11 @@ export default function BudgetDetailScreen() {
         {/* HERO CARD */}
         <Animated.View entering={FadeInDown.duration(300).easing(Easing.out(Easing.cubic))} style={styles.heroCard}>
           <View style={styles.badgeRow}>
+            {budget.customName && budget.categoryName ? (
+              <View style={styles.periodPill}>
+                <Text style={styles.periodPillText}>{budget.categoryName}</Text>
+              </View>
+            ) : null}
             <View style={styles.periodPill}>
               <Text style={styles.periodPillText}>{periodShort}</Text>
             </View>
@@ -290,7 +251,9 @@ export default function BudgetDetailScreen() {
               {categoryTransactions.map((tx, idx) => (
                 <Pressable
                   key={tx.id}
-                  onPress={() => setDetailTx(tx)}
+                  onPress={() =>
+                    router.push(`/transaction/${encodeURIComponent(tx.id)}` as Href)
+                  }
                   style={({ pressed }) => [
                     styles.txRow,
                     idx < categoryTransactions.length - 1 && styles.txRowBorder,
@@ -338,10 +301,11 @@ export default function BudgetDetailScreen() {
       {/* STICKY BOTTOM CTA */}
       <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
         <Pressable
-          onPress={() => {
-            setEditingTx(null);
-            setTxSheetOpen(true);
-          }}
+          onPress={() =>
+            router.push(
+              `/transaction/form?type=EXPENSE&categoryKey=${encodeURIComponent(budget.iconKey)}` as Href
+            )
+          }
           style={({ pressed }) => [styles.primaryBtn, pressed && { opacity: 0.88 }]}
         >
           <Plus size={18} color="#FFFFFF" strokeWidth={2.4} />
@@ -357,35 +321,6 @@ export default function BudgetDetailScreen() {
         variant="danger"
         onCancel={() => setConfirmDeleteOpen(false)}
         onConfirm={() => void handleDeleteBudget()}
-      />
-
-      <QuickTransactionSheet
-        visible={txSheetOpen}
-        initialMode="EXPENSE"
-        initialCategoryKey={budget.iconKey}
-        wallets={wallets}
-        editingTransaction={editingTx}
-        onClose={() => {
-          setTxSheetOpen(false);
-          setEditingTx(null);
-        }}
-        onSubmit={handleTxSubmit}
-      />
-
-      <TransactionDetailSheet
-        visible={Boolean(detailTx)}
-        transaction={detailTx}
-        onClose={() => setDetailTx(null)}
-        onEdit={(tx) => {
-          setDetailTx(null);
-          setEditingTx(tx);
-          setTxSheetOpen(true);
-        }}
-        onDelete={(tx) => {
-          setDetailTx(null);
-          deleteTransaction(tx.id);
-          showToast('Transaksi dihapus');
-        }}
       />
     </View>
   );

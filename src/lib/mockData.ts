@@ -35,6 +35,8 @@ export interface TransactionItem {
   targetWalletName?: string;
   dateGroup?: string;
   dateLabel: string;
+  transactionDate?: string;
+  recurringId?: string | null;
   amount: number;
   type: TransactionMode;
   note?: string;
@@ -93,10 +95,10 @@ export const INITIAL_WALLETS: WalletItem[] = [
     type: 'CASH',
     last4: 'Dompet Fisik',
     balance: 500_000,
-    colorKey: 'slate',
+    colorKey: 'obsidian',
     isArchived: false,
-    dotColor: getWalletTheme('CASH', 'slate').dotColor,
-    gradient: getWalletTheme('CASH', 'slate').gradient,
+    dotColor: getWalletTheme('CASH', 'obsidian').dotColor,
+    gradient: getWalletTheme('CASH', 'obsidian').gradient,
   },
 ];
 
@@ -346,6 +348,8 @@ export type BudgetPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 export interface BudgetItem {
   id: string;
   name: string;
+  customName?: string | null;
+  categoryName?: string;
   iconKey: BudgetIconKey;
   spent: number;
   limit: number;

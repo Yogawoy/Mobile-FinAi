@@ -28,6 +28,7 @@ import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance, type ManagedCategory } from '@/context/FinanceContext';
 import { type CategoryIconKey } from '@/lib/mockData';
@@ -355,7 +356,7 @@ export default function CategoriesScreen() {
         }
       >
         <Text style={styles.label}>Nama Kategori</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.input}
           placeholder="Contoh: Skincare, Olahraga, Freelance"
           placeholderTextColor="#94A3B8"

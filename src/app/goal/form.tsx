@@ -2,10 +2,12 @@ import {
   CalendarPickerSheet,
   formatIndonesianFullDate,
 } from '@/components/CalendarPickerSheet';
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { DeleteGoalSheet } from '@/components/budgets/DeleteGoalSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
+import { useKeyboardFocusScroll } from '@/hooks/useKeyboardFocusScroll';
 import { formatIDR } from '@/lib/format';
 import {
   GOAL_COLOR_PALETTE,
@@ -40,66 +42,10 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
-  type PressableProps,
-  type StyleProp,
-  type ViewStyle,
 } from 'react-native';
-import Animated, {
-  FadeInDown,
-  FadeOutUp,
-  LinearTransition,
-  useAnimatedStyle,
-  useSharedValue,
-  withSequence,
-  withSpring,
-  withTiming,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const ReanimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-interface TactilePressableProps extends Omit<PressableProps, 'style'> {
-  style?: StyleProp<ViewStyle>;
-  scaleTo?: number;
-  children: React.ReactNode;
-}
-
-function TactilePressable({
-  style,
-  scaleTo = 0.96,
-  onPressIn,
-  onPressOut,
-  disabled,
-  children,
-  ...rest
-}: TactilePressableProps) {
-  const scale = useSharedValue(1);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <ReanimatedPressable
-      {...rest}
-      disabled={disabled}
-      onPressIn={(e) => {
-        if (!disabled) {
-          scale.value = withSpring(scaleTo, { damping: 18, stiffness: 320 });
-        }
-        onPressIn?.(e);
-      }}
-      onPressOut={(e) => {
-        scale.value = withSpring(1, { damping: 16, stiffness: 260 });
-        onPressOut?.(e);
-      }}
-      style={[style, animStyle]}
-    >
-      {children}
-    </ReanimatedPressable>
-  );
-}
 
 const STEP_CHIPS: Array<{ label: string; add: number }> = [
   { label: '+500 rb', add: 500_000 },
@@ -159,6 +105,8 @@ export default function GoalFormScreen() {
   const isEdit = Boolean(id);
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { scrollViewRef, keyboardHeight, scrollToInput, onScroll } =
+    useKeyboardFocusScroll({ stickyBottomHeight: 80 + insets.bottom });
   const { showToast } = useToast();
   const { goals, wallets, refreshAllData, updateGoalTheme } = useFinance();
 
@@ -172,6 +120,7 @@ export default function GoalFormScreen() {
   const [targetText, setTargetText] = useState('');
   const [targetFocused, setTargetFocused] = useState(false);
   const [currentText, setCurrentText] = useState('');
+  const [currentFocused, setCurrentFocused] = useState(false);
   const [showInitialBalance, setShowInitialBalance] = useState(false);
 
   const activeWallets = useMemo(
@@ -193,17 +142,6 @@ export default function GoalFormScreen() {
     startOfLocalDay(new Date())
   );
   const [calendarOpen, setCalendarOpen] = useState(false);
-
-  const previewPulse = useSharedValue(1);
-  const progressWidth = useSharedValue(4);
-  const chevronDeg = useSharedValue(0);
-
-  const triggerPreviewPulse = () => {
-    previewPulse.value = withSequence(
-      withSpring(0.985, { damping: 16, stiffness: 260 }),
-      withSpring(1, { damping: 15, stiffness: 220 })
-    );
-  };
 
   useEffect(() => {
     let active = true;
@@ -270,29 +208,6 @@ export default function GoalFormScreen() {
       ? Math.min(100, Math.round((currentAmount / targetAmount) * 100))
       : 0;
 
-  useEffect(() => {
-    progressWidth.value = withSpring(Math.max(4, previewPct), {
-      damping: 20,
-      stiffness: 140,
-    });
-  }, [previewPct, progressWidth]);
-
-  useEffect(() => {
-    chevronDeg.value = withTiming(showInitialBalance ? 180 : 0, { duration: 220 });
-  }, [showInitialBalance, chevronDeg]);
-
-  const previewCardAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: previewPulse.value }],
-  }));
-
-  const progressFillAnimStyle = useAnimatedStyle(() => ({
-    width: `${progressWidth.value}%`,
-  }));
-
-  const chevronAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${chevronDeg.value}deg` }],
-  }));
-
   const selectedInitialWallet = activeWallets.find((w) => w.id === initialWalletId);
   const isInitialInsufficient =
     !isEdit &&
@@ -332,7 +247,6 @@ export default function GoalFormScreen() {
   const handleAddStep = (addValue: number) => {
     const next = targetAmount + addValue;
     setTargetText(formatThousands(String(next)));
-    triggerPreviewPulse();
   };
 
   const handleSelectDuration = (key: DurationKey, months: number | null) => {
@@ -342,7 +256,6 @@ export default function GoalFormScreen() {
     } else {
       setSelectedDate(addMonthsToDate(startOfLocalDay(new Date()), months));
     }
-    triggerPreviewPulse();
   };
 
   const handleSave = async () => {
@@ -452,9 +365,14 @@ export default function GoalFormScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 112 + insets.bottom }}
+          scrollEventThrottle={16}
+          onScroll={onScroll}
+          contentContainerStyle={{
+            paddingBottom: 112 + insets.bottom,
+          }}
         >
           {/* CURVED ROYAL BLUE HEADER */}
           <LinearGradient
@@ -503,14 +421,9 @@ export default function GoalFormScreen() {
               <Text style={styles.loadingText}>Memuat data tabungan</Text>
             </View>
           ) : (
-            <Animated.View
-              layout={LinearTransition.springify().damping(20).stiffness(160)}
-            >
+            <View>
               {/* OVERLAPPING LIVE INTERACTIVE POCKET CARD */}
-              <Animated.View
-                entering={FadeInDown.duration(360).springify().damping(18).stiffness(140)}
-                style={[styles.previewWrap, previewCardAnimStyle]}
-              >
+              <View style={styles.previewWrap}>
                 <LinearGradient
                   colors={selectedPalette.gradient}
                   start={{ x: 0, y: 0 }}
@@ -542,8 +455,11 @@ export default function GoalFormScreen() {
                   </Text>
 
                   <View style={styles.previewProgressTrack}>
-                    <Animated.View
-                      style={[styles.previewProgressFill, progressFillAnimStyle]}
+                    <View
+                      style={[
+                        styles.previewProgressFill,
+                        { width: `${Math.max(4, previewPct)}%` },
+                      ]}
                     />
                   </View>
 
@@ -558,25 +474,18 @@ export default function GoalFormScreen() {
                     </Text>
                   </View>
                 </LinearGradient>
-              </Animated.View>
+              </View>
 
               {/* STRIP RINGKAS PERSONALISASI WARNA & IKON */}
-              <Animated.View
-                entering={FadeInDown.delay(50).duration(360).springify().damping(18).stiffness(140)}
-                layout={LinearTransition.springify().damping(20).stiffness(160)}
-                style={styles.softCard}
-              >
+              <View style={styles.softCard}>
                 <View style={styles.colorRow}>
                   {GOAL_COLOR_PALETTE.map((item) => {
                     const selected = colorKey === item.key;
                     return (
-                      <TactilePressable
+                      <TouchableOpacity
                         key={item.key}
-                        scaleTo={0.92}
-                        onPress={() => {
-                          setColorKey(item.key);
-                          triggerPreviewPulse();
-                        }}
+                        activeOpacity={0.75}
+                        onPress={() => setColorKey(item.key)}
                         accessibilityRole="button"
                         accessibilityLabel={`Pilih warna ${item.label}`}
                         style={[
@@ -594,28 +503,25 @@ export default function GoalFormScreen() {
                             <Check size={14} color="#FFFFFF" strokeWidth={2.8} />
                           ) : null}
                         </View>
-                      </TactilePressable>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>
 
                 <View style={styles.stripDivider} />
 
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
+                <HorizontalScrollStrip
+                  label="Ikon"
+                  fadeColor="#FFFFFF"
                   contentContainerStyle={styles.iconScroll}
                 >
                   {GOAL_ICON_OPTIONS.map((opt) => {
                     const selected = iconKey === opt.key;
                     return (
-                      <TactilePressable
+                      <TouchableOpacity
                         key={opt.key}
-                        scaleTo={0.93}
-                        onPress={() => {
-                          setIconKey(opt.key);
-                          triggerPreviewPulse();
-                        }}
+                        activeOpacity={0.75}
+                        onPress={() => setIconKey(opt.key)}
                         accessibilityRole="button"
                         accessibilityLabel={`Pilih ikon ${opt.label}`}
                         style={[
@@ -631,18 +537,14 @@ export default function GoalFormScreen() {
                           selected ? selectedPalette.primary : Colors.textSecondary,
                           19
                         )}
-                      </TactilePressable>
+                      </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
-              </Animated.View>
+                </HorizontalScrollStrip>
+              </View>
 
               {/* SECTION DETAIL TARGET & NOMINAL PINTAR */}
-              <Animated.View
-                entering={FadeInDown.delay(100).duration(360).springify().damping(18).stiffness(140)}
-                layout={LinearTransition.springify().damping(20).stiffness(160)}
-                style={styles.softCard}
-              >
+              <View style={styles.softCard}>
                 <View style={styles.labelWithCount}>
                   <Text style={styles.cardTitleNoMargin}>Nama Target</Text>
                   <Text style={[styles.charCounter, Typography.tabularNums]}>
@@ -657,7 +559,10 @@ export default function GoalFormScreen() {
                   placeholder="Contoh: Dana Darurat"
                   placeholderTextColor="#94A3B8"
                   value={name}
-                  onFocus={() => setNameFocused(true)}
+                  onFocus={(e) => {
+                    setNameFocused(true);
+                    scrollToInput(e);
+                  }}
                   onBlur={() => setNameFocused(false)}
                   onChangeText={(val) => setName(val.slice(0, 40))}
                   maxLength={40}
@@ -666,17 +571,14 @@ export default function GoalFormScreen() {
                 <View style={[styles.labelWithCount, { marginTop: 18 }]}>
                   <Text style={styles.cardTitleNoMargin}>Target Dana</Text>
                   {targetAmount > 0 ? (
-                    <TactilePressable
-                      scaleTo={0.94}
-                      onPress={() => {
-                        setTargetText('');
-                        triggerPreviewPulse();
-                      }}
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={() => setTargetText('')}
                       style={styles.resetBtn}
                     >
                       <RotateCcw size={12} color={Colors.textSecondary} strokeWidth={2.2} />
                       <Text style={styles.resetBtnText}>Reset</Text>
-                    </TactilePressable>
+                    </TouchableOpacity>
                   ) : null}
                 </View>
 
@@ -693,7 +595,10 @@ export default function GoalFormScreen() {
                     placeholderTextColor="#94A3B8"
                     keyboardType="numeric"
                     value={targetText}
-                    onFocus={() => setTargetFocused(true)}
+                    onFocus={(e) => {
+                      setTargetFocused(true);
+                      scrollToInput(e);
+                    }}
                     onBlur={() => setTargetFocused(false)}
                     onChangeText={(val) => setTargetText(formatThousands(val))}
                   />
@@ -701,15 +606,16 @@ export default function GoalFormScreen() {
 
                 <View style={styles.stepChipRow}>
                   {STEP_CHIPS.map((step) => (
-                    <TactilePressable
+                    <TouchableOpacity
                       key={step.add}
+                      activeOpacity={0.75}
                       onPress={() => handleAddStep(step.add)}
                       style={styles.stepChip}
                     >
                       <Text style={[styles.stepChipText, Typography.tabularNums]}>
                         {step.label}
                       </Text>
-                    </TactilePressable>
+                    </TouchableOpacity>
                   ))}
                 </View>
 
@@ -722,20 +628,23 @@ export default function GoalFormScreen() {
                       <Text style={styles.accordionTitle}>
                         Sudah punya saldo awal?
                       </Text>
-                      <Animated.View style={chevronAnimStyle}>
+                      <View
+                        style={
+                          showInitialBalance
+                            ? { transform: [{ rotate: '180deg' }] }
+                            : undefined
+                        }
+                      >
                         <ChevronDown size={17} color={Colors.textSecondary} strokeWidth={2.2} />
-                      </Animated.View>
+                      </View>
                     </Pressable>
 
                     {showInitialBalance ? (
-                      <Animated.View
-                        entering={FadeInDown.duration(260)}
-                        exiting={FadeOutUp.duration(200)}
-                        style={styles.accordionBody}
-                      >
+                      <View style={styles.accordionBody}>
                         <View
                           style={[
                             styles.smallAmountRow,
+                            currentFocused && { borderColor: selectedPalette.primary },
                             isInitialInsufficient && { borderColor: Colors.expense },
                           ]}
                         >
@@ -746,6 +655,11 @@ export default function GoalFormScreen() {
                             placeholderTextColor="#94A3B8"
                             keyboardType="numeric"
                             value={currentText}
+                            onFocus={(e) => {
+                              setCurrentFocused(true);
+                              scrollToInput(e);
+                            }}
+                            onBlur={() => setCurrentFocused(false)}
                             onChangeText={(val) => setCurrentText(formatThousands(val))}
                           />
                         </View>
@@ -759,7 +673,8 @@ export default function GoalFormScreen() {
                           Sumber Dana Awal (Opsional)
                         </Text>
                         <View style={styles.sourceSegmentRow}>
-                          <TactilePressable
+                          <TouchableOpacity
+                            activeOpacity={0.75}
                             onPress={() => setInitialSourceType('WALLET')}
                             style={[
                               styles.sourceSegmentBtn,
@@ -779,8 +694,9 @@ export default function GoalFormScreen() {
                             >
                               Dari Dompet
                             </Text>
-                          </TactilePressable>
-                          <TactilePressable
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            activeOpacity={0.75}
                             onPress={() => setInitialSourceType('EXTERNAL')}
                             style={[
                               styles.sourceSegmentBtn,
@@ -800,20 +716,20 @@ export default function GoalFormScreen() {
                             >
                               Dana Luar
                             </Text>
-                          </TactilePressable>
+                          </TouchableOpacity>
                         </View>
 
                         {initialSourceType === 'WALLET' && activeWallets.length > 0 ? (
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
+                          <HorizontalScrollStrip
+                            fadeColor="#FFFFFF"
                             contentContainerStyle={styles.walletChipScroll}
                           >
                             {activeWallets.map((w) => {
                               const selected = w.id === initialWalletId;
                               return (
-                                <TactilePressable
+                                <TouchableOpacity
                                   key={w.id}
+                                  activeOpacity={0.75}
                                   onPress={() => setInitialWalletId(w.id)}
                                   style={[
                                     styles.walletPickChip,
@@ -840,16 +756,16 @@ export default function GoalFormScreen() {
                                   >
                                     {formatIDR(w.balance)}
                                   </Text>
-                                </TactilePressable>
+                                </TouchableOpacity>
                               );
                             })}
-                          </ScrollView>
+                          </HorizontalScrollStrip>
                         ) : (
                           <Text style={styles.helperText}>
                             Saldo awal dicatat terpisah tanpa memotong saldo dompet.
                           </Text>
                         )}
-                      </Animated.View>
+                      </View>
                     ) : null}
                   </View>
                 ) : (
@@ -860,21 +776,18 @@ export default function GoalFormScreen() {
                     </Text>
                   </View>
                 )}
-              </Animated.View>
+              </View>
 
               {/* SECTION TARGET WAKTU & SIMULASI RITME NABUNG */}
-              <Animated.View
-                entering={FadeInDown.delay(150).duration(360).springify().damping(18).stiffness(140)}
-                layout={LinearTransition.springify().damping(20).stiffness(160)}
-                style={styles.softCard}
-              >
+              <View style={styles.softCard}>
                 <Text style={styles.cardTitle}>Target Waktu</Text>
                 <View style={styles.presetGrid}>
                   {DURATION_PRESETS.map((preset) => {
                     const active = selectedPreset === preset.key;
                     return (
-                      <TactilePressable
+                      <TouchableOpacity
                         key={preset.key}
+                        activeOpacity={0.75}
                         onPress={() => handleSelectDuration(preset.key, preset.months)}
                         style={[
                           styles.presetPill,
@@ -892,12 +805,13 @@ export default function GoalFormScreen() {
                         >
                           {preset.label}
                         </Text>
-                      </TactilePressable>
+                      </TouchableOpacity>
                     );
                   })}
                 </View>
 
-                <TactilePressable
+                <TouchableOpacity
+                  activeOpacity={0.75}
                   onPress={() => setCalendarOpen(true)}
                   accessibilityRole="button"
                   accessibilityLabel="Buka kalender tanggal target"
@@ -930,15 +844,10 @@ export default function GoalFormScreen() {
                     </Text>
                     <ChevronRight size={15} color={selectedPalette.primary} strokeWidth={2.2} />
                   </View>
-                </TactilePressable>
+                </TouchableOpacity>
 
                 {rhythmStats ? (
-                  <Animated.View
-                    entering={FadeInDown.duration(260)}
-                    exiting={FadeOutUp.duration(200)}
-                    layout={LinearTransition.springify().damping(20).stiffness(160)}
-                    style={styles.rhythmCard}
-                  >
+                  <View style={styles.rhythmCard}>
                     <Text style={styles.rhythmHeading}>Simulasi Ritme Nabung</Text>
                     <View style={styles.rhythmCols}>
                       <View style={styles.rhythmCol}>
@@ -985,16 +894,17 @@ export default function GoalFormScreen() {
                     <Text style={styles.rhythmFooter}>
                       Target tercapai pada {rhythmStats.targetLabel}
                     </Text>
-                  </Animated.View>
+                  </View>
                 ) : null}
-              </Animated.View>
-            </Animated.View>
+              </View>
+            </View>
           )}
         </ScrollView>
 
         {/* STICKY BOTTOM ACTION BAR */}
         <View style={[styles.bottomBar, { paddingBottom: Math.max(insets.bottom, 14) }]}>
-          <TactilePressable
+          <TouchableOpacity
+            activeOpacity={0.75}
             disabled={loading || submitting || isInitialInsufficient}
             onPress={() => void handleSave()}
             accessibilityRole="button"
@@ -1012,7 +922,7 @@ export default function GoalFormScreen() {
                 {isEdit ? 'Simpan Perubahan' : 'Buat Tabungan'}
               </Text>
             )}
-          </TactilePressable>
+          </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
@@ -1043,12 +953,10 @@ export default function GoalFormScreen() {
         onSelect={(picked) => {
           setSelectedDate(picked);
           setSelectedPreset('CUSTOM');
-          triggerPreviewPulse();
         }}
         onClear={() => {
           setSelectedDate(null);
           setSelectedPreset('NONE');
-          triggerPreviewPulse();
         }}
       />
     </View>

@@ -1,96 +1,394 @@
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { ChatRichCard } from '@/components/ai/ChatRichCard';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
+import { formatIDR } from '@/lib/format';
 import {
   formatNowTime,
-  generateAiReply,
-  getWelcomeMessage,
-  QUICK_PROMPTS,
   type ChatMessage,
+  type ChatRichCardType,
 } from '@/lib/mockAiChat';
-import { aiService, type AiWalletOption } from '@/services/ai.service';
+import {
+  aiService,
+  type AiWalletOption,
+  type ChatActionCard,
+  type ChatChoiceCard,
+  type ChatSummaryCard,
+} from '@/services/ai.service';
 import { budgetService } from '@/services/budget.service';
 import { goalService } from '@/services/goal.service';
 import { transactionService } from '@/services/transaction.service';
-import { Colors, FontFamily, Radius, TouchTarget } from '@/theme/tokens';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
+import { useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { RotateCcw, Send, Sparkles } from 'lucide-react-native';
-import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import {
+  ArrowUp,
+  BarChart3,
+  ChevronRight,
+  PieChart,
+  PiggyBank,
+  Receipt,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+} from 'lucide-react-native';
+import React, { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import {
+  ActivityIndicator,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
-import Animated, {
-  Easing,
-  FadeInUp,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-function BouncingDot({ delay }: { delay: number }) {
-  const translateY = useSharedValue(0);
-
-  useEffect(() => {
-    translateY.value = withDelay(
-      delay,
-      withRepeat(
-        withSequence(
-          withTiming(-4, { duration: 280, easing: Easing.out(Easing.quad) }),
-          withTiming(0, { duration: 280, easing: Easing.in(Easing.quad) })
-        ),
-        -1,
-        false
-      )
-    );
-  }, [delay, translateY]);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  return <Animated.View style={[styles.typingDot, animStyle]} />;
+interface LocalChatMessage extends ChatMessage {
+  isError?: boolean;
+  retryText?: string;
+  choiceResolved?: boolean;
 }
 
-function AiSenderHeader({ timestamp }: { timestamp?: string }) {
+const EMPTY_SHORTCUTS = [
+  {
+    key: 'expense',
+    title: 'Catat Pengeluaran',
+    example: 'Makan siang 35rb',
+    prefill: 'Beli makan siang 35rb pakai ',
+    autoSend: false,
+    icon: 'expense' as const,
+    accent: '#EF4444',
+    softBg: '#FEF2F2',
+  },
+  {
+    key: 'budget',
+    title: 'Atur Anggaran',
+    example: 'Makan 50rb per hari',
+    prefill: 'Buat anggaran makan 50rb per hari',
+    autoSend: false,
+    icon: 'budget' as const,
+    accent: '#2563EB',
+    softBg: '#EBF2FF',
+  },
+  {
+    key: 'saving',
+    title: 'Nabung Cepat',
+    example: 'Obat orang tua 100rb 7 hari',
+    prefill: 'Nabung beli obat orang tua 100rb 7 hari',
+    autoSend: false,
+    icon: 'saving' as const,
+    accent: '#10B981',
+    softBg: '#ECFDF5',
+  },
+  {
+    key: 'summary',
+    title: 'Cek Keuangan',
+    example: 'Ringkasan bulan ini',
+    prefill: 'Bagaimana kondisi keuanganku bulan ini?',
+    autoSend: true,
+    icon: 'summary' as const,
+    accent: '#D97706',
+    softBg: '#FEF3C7',
+  },
+];
+
+const QUICK_SUGGESTIONS = [
+  'Cek anggaran',
+  'Pengeluaran bulan ini',
+  'Tips hemat',
+];
+
+function cleanDisplayText(raw: string): string {
+  return raw
+    .replace(/\*\*/g, '')
+    .replace(/[\u2022\u00B7]/g, '')
+    .replace(/\u2014/g, '-')
+    .replace(/\.{3}|\u2026/g, '')
+    .replace(/^\s*[-*]\s+/gm, '')
+    .trim();
+}
+
+function getAccentColors(accent: ChatActionCard['accent']) {
+  switch (accent) {
+    case 'green':
+      return { color: '#10B981', bg: '#ECFDF5' };
+    case 'red':
+      return { color: '#EF4444', bg: '#FEF2F2' };
+    case 'amber':
+      return { color: '#D97706', bg: '#FEF3C7' };
+    case 'blue':
+    default:
+      return { color: '#2563EB', bg: '#EBF2FF' };
+  }
+}
+
+function getToneColor(tone?: 'default' | 'green' | 'red' | 'blue'): string {
+  switch (tone) {
+    case 'green':
+      return '#10B981';
+    case 'red':
+      return '#EF4444';
+    case 'blue':
+      return '#2563EB';
+    default:
+      return '#0F172A';
+  }
+}
+
+function StructuredActionCard({
+  card,
+  onOpenDetail,
+}: {
+  card: ChatActionCard;
+  onOpenDetail: (route: Href) => void;
+}) {
+  const palette = getAccentColors(card.accent);
+  const route: Href | null = card.detailRoute
+    ? (`/${card.detailRoute.type}/${encodeURIComponent(card.detailRoute.id)}` as Href)
+    : null;
+
   return (
-    <View style={styles.aiSenderHeader}>
-      <View style={styles.aiMiniBadge}>
-        <Sparkles size={13} color={Colors.primary} strokeWidth={2.1} />
+    <View style={styles.structuredCard}>
+      <View style={styles.actionTopRow}>
+        <View style={[styles.actionBadge, { backgroundColor: palette.bg }]}>
+          <Text style={[styles.actionBadgeText, { color: palette.color }]}>
+            {card.badge}
+          </Text>
+        </View>
+        {card.amount > 0 ? (
+          <Text
+            style={[styles.actionAmount, Typography.tabularNums]}
+            numberOfLines={1}
+          >
+            {formatIDR(card.amount)}
+          </Text>
+        ) : null}
       </View>
-      <Text style={styles.aiSenderName}>FinAI Assistant</Text>
-      {timestamp ? <Text style={styles.aiSenderTime}>{timestamp}</Text> : null}
+
+      {card.title ? (
+        <Text style={styles.actionTitle} numberOfLines={2}>
+          {card.title}
+        </Text>
+      ) : null}
+
+      {card.rows.length > 0 ? (
+        <View style={styles.rowsWrap}>
+          {card.rows.slice(0, 3).map((row, idx) => (
+            <View key={`${row.label}-${idx}`} style={styles.kvRow}>
+              <Text style={styles.kvLabel}>{row.label}</Text>
+              <Text style={styles.kvValue} numberOfLines={2}>
+                {row.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {route ? (
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={() => onOpenDetail(route)}
+          style={styles.detailLinkBtn}
+        >
+          <Text style={styles.detailLinkText}>Lihat Detail</Text>
+          <ChevronRight size={15} color="#2563EB" strokeWidth={2.2} />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
 
-function TypingIndicatorBubble() {
+function StructuredSummaryCard({
+  card,
+  onOpenBudget,
+}: {
+  card: ChatSummaryCard;
+  onOpenBudget?: (budgetId: string) => void;
+}) {
+  const getBudgetToneColor = (tone?: 'green' | 'amber' | 'red') => {
+    if (tone === 'red') return '#DC2626';
+    if (tone === 'amber') return '#D97706';
+    return '#059669';
+  };
+
   return (
-    <View style={styles.aiBlock}>
-      <AiSenderHeader />
-      <View style={styles.typingBubble}>
-        <BouncingDot delay={0} />
-        <BouncingDot delay={140} />
-        <BouncingDot delay={280} />
+    <View style={styles.structuredCard}>
+      <Text style={styles.summaryCardTitle}>{card.title}</Text>
+
+      {card.metrics.length > 0 ? (
+        <View style={styles.metricsGrid}>
+          {card.metrics.slice(0, 4).map((m, idx) => (
+            <View key={`${m.label}-${idx}`} style={styles.metricTile}>
+              <Text style={styles.metricLabel} numberOfLines={1}>
+                {m.label}
+              </Text>
+              <Text
+                style={[
+                  styles.metricValue,
+                  Typography.tabularNums,
+                  { color: getToneColor(m.tone) },
+                ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {m.value}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {card.items && card.items.length > 0 ? (
+        <View style={styles.itemsWrap}>
+          {(card.items.some((it) => Boolean(it.usableText))
+            ? card.items
+            : card.items.slice(0, 4)
+          ).map((it, idx) => {
+            if (it.usableText) {
+              const rowContent = (
+                <>
+                  <View style={styles.budgetItemLeft}>
+                    <View style={styles.budgetItemTitleRow}>
+                      <Text style={styles.budgetItemTitle} numberOfLines={1}>
+                        {it.label}
+                      </Text>
+                      {it.periodLabel ? (
+                        <View style={styles.budgetPeriodBadge}>
+                          <Text style={styles.budgetPeriodText}>
+                            {it.periodLabel}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {it.usageText ? (
+                      <Text
+                        style={[styles.budgetUsageText, Typography.tabularNums]}
+                        numberOfLines={1}
+                      >
+                        {it.usageText}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  <View style={styles.budgetItemRight}>
+                    <Text style={styles.budgetUsableLabel}>
+                      {it.isExceeded ? 'Lewat batas' : 'Bisa dipakai'}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.budgetUsableValue,
+                        Typography.tabularNums,
+                        { color: getBudgetToneColor(it.tone) },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {it.usableText}
+                    </Text>
+                  </View>
+                </>
+              );
+
+              if (it.id && onOpenBudget) {
+                return (
+                  <TouchableOpacity
+                    key={it.id}
+                    activeOpacity={0.7}
+                    onPress={() => onOpenBudget(it.id!)}
+                    style={[styles.budgetItemRow, idx > 0 && styles.itemRowDivider]}
+                  >
+                    {rowContent}
+                  </TouchableOpacity>
+                );
+              }
+
+              return (
+                <View
+                  key={`${it.label}-${idx}`}
+                  style={[styles.budgetItemRow, idx > 0 && styles.itemRowDivider]}
+                >
+                  {rowContent}
+                </View>
+              );
+            }
+
+            return (
+              <View
+                key={`${it.label}-${idx}`}
+                style={[styles.itemRow, idx > 0 && styles.itemRowDivider]}
+              >
+                <Text style={styles.itemLabel} numberOfLines={1}>
+                  {it.label}
+                </Text>
+                <View style={styles.itemRight}>
+                  <Text
+                    style={[styles.itemValue, Typography.tabularNums]}
+                    numberOfLines={1}
+                  >
+                    {it.value}
+                  </Text>
+                  {it.status ? (
+                    <Text style={[styles.itemStatus, Typography.tabularNums]}>
+                      {it.status}
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
+      {card.tip ? (
+        <View style={styles.tipBox}>
+          <Text style={styles.tipText}>{cleanDisplayText(card.tip)}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function StructuredChoiceCard({
+  card,
+  disabled,
+  onSelect,
+}: {
+  card: ChatChoiceCard;
+  disabled: boolean;
+  onSelect: (messageToSend: string) => void;
+}) {
+  return (
+    <View style={styles.structuredCard}>
+      <Text style={styles.choiceTitle}>{card.title}</Text>
+      <View style={styles.choiceWrap}>
+        {card.options.map((opt, idx) => (
+          <TouchableOpacity
+            key={`${opt.label}-${idx}`}
+            activeOpacity={0.75}
+            disabled={disabled}
+            onPress={() => onSelect(opt.messageToSend)}
+            style={[styles.choicePill, disabled && styles.choicePillDisabled]}
+          >
+            <Text style={styles.choicePillText}>{opt.label}</Text>
+            {opt.sublabel ? (
+              <Text style={[styles.choiceSublabel, Typography.tabularNums]}>
+                {opt.sublabel}
+              </Text>
+            ) : null}
+          </TouchableOpacity>
+        ))}
       </View>
     </View>
   );
 }
 
 export default function AiChatbotScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const {
@@ -98,6 +396,7 @@ export default function AiChatbotScreen() {
     wallets,
     budgets,
     transactions,
+    goals,
     monthlyIncomeActual,
     monthlyExpenseActual,
     todayExpenseActual,
@@ -106,8 +405,9 @@ export default function AiChatbotScreen() {
     refreshAllData,
     categories,
   } = useFinance();
+
   const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
-  const replyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRef = useRef<ComponentRef<typeof TextInput>>(null);
 
   const liveContext = {
     userProfile,
@@ -121,17 +421,7 @@ export default function AiChatbotScreen() {
     hasCompletedSetup,
   };
 
-  const welcomeProfile = {
-    name: userProfile.name,
-    financialChallenge: userProfile.financialChallenge,
-    budgetRule: userProfile.budgetRule,
-    safeDailyLimit: userProfile.safeDailyLimit,
-    hasCompletedSetup,
-  };
-
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    getWelcomeMessage(welcomeProfile),
-  ]);
+  const [messages, setMessages] = useState<LocalChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [processingMsgId, setProcessingMsgId] = useState<string | null>(null);
@@ -139,28 +429,21 @@ export default function AiChatbotScreen() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
-  useEffect(() => {
-    setMessages((prev) => {
-      if (prev.length === 1 && prev[0].id === 'msg-welcome') {
-        return [
-          getWelcomeMessage({
-            name: userProfile.name,
-            financialChallenge: userProfile.financialChallenge,
-            budgetRule: userProfile.budgetRule,
-            safeDailyLimit: userProfile.safeDailyLimit,
-            hasCompletedSetup,
-          }),
-        ];
-      }
-      return prev;
-    });
-  }, [
-    hasCompletedSetup,
-    userProfile.name,
-    userProfile.financialChallenge,
-    userProfile.budgetRule,
-    userProfile.safeDailyLimit,
-  ]);
+  const { activeWalletCount, readyBalance, savingsBalance } = useMemo(() => {
+    const active = wallets.filter((w) => !w.isArchived);
+    const ready = active
+      .filter((w) => w.type !== 'SAVINGS')
+      .reduce((sum, w) => sum + w.balance, 0);
+    const savingsWallets = active
+      .filter((w) => w.type === 'SAVINGS')
+      .reduce((sum, w) => sum + w.balance, 0);
+    const goalsTotal = goals.reduce((sum, g) => sum + g.current, 0);
+    return {
+      activeWalletCount: active.length,
+      readyBalance: ready,
+      savingsBalance: savingsWallets > 0 ? savingsWallets : goalsTotal,
+    };
+  }, [wallets, goals]);
 
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -175,11 +458,11 @@ export default function AiChatbotScreen() {
     return () => {
       subShow.remove();
       subHide.remove();
-      if (replyTimerRef.current) clearTimeout(replyTimerRef.current);
     };
   }, []);
 
   useEffect(() => {
+    if (messages.length === 0 && !isTyping) return;
     const timer = setTimeout(() => {
       scrollRef.current?.scrollToEnd({ animated: true });
     }, 60);
@@ -190,7 +473,7 @@ export default function AiChatbotScreen() {
     const trimmed = rawText.trim();
     if (!trimmed || isTyping) return;
 
-    const userMsg: ChatMessage = {
+    const userMsg: LocalChatMessage = {
       id: `user-${Date.now()}`,
       sender: 'USER',
       text: trimmed,
@@ -202,7 +485,11 @@ export default function AiChatbotScreen() {
       content: m.text,
     }));
 
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.card?.type === 'CHOICE_CARD' ? { ...m, choiceResolved: true } : m
+      ).concat(userMsg)
+    );
     setInputText('');
     setIsTyping(true);
 
@@ -213,36 +500,38 @@ export default function AiChatbotScreen() {
       });
 
       if (res.actionExecuted) {
-        void refreshAllData();
+        await refreshAllData();
       }
 
-      const richCard =
+      const richCard: ChatRichCardType | undefined =
         res.cardType === 'FORECAST' ||
-          res.cardType === 'ANOMALY' ||
-          res.cardType === 'BUDGET' ||
-          res.cardType === 'BUDGET_SET' ||
-          res.cardType === 'BUDGET_UPDATED' ||
-          res.cardType === 'BUDGET_DELETED' ||
-          res.cardType === 'BUDGET_RESET' ||
-          res.cardType === 'SPENDING_BREAKDOWN' ||
-          res.cardType === 'SUMMARY' ||
-          res.cardType === 'GOAL' ||
-          res.cardType === 'WALLET' ||
-          res.cardType === 'FINANCIAL_PLAN' ||
-          res.cardType === 'WALLET_PICKER' ||
-          res.cardType === 'TRANSACTION_PREVIEW' ||
-          res.cardType === 'TRANSACTION_CREATED'
+        res.cardType === 'ANOMALY' ||
+        res.cardType === 'BUDGET' ||
+        res.cardType === 'BUDGET_SET' ||
+        res.cardType === 'BUDGET_UPDATED' ||
+        res.cardType === 'BUDGET_DELETED' ||
+        res.cardType === 'BUDGET_RESET' ||
+        res.cardType === 'SPENDING_BREAKDOWN' ||
+        res.cardType === 'SUMMARY' ||
+        res.cardType === 'GOAL' ||
+        res.cardType === 'WALLET' ||
+        res.cardType === 'FINANCIAL_PLAN' ||
+        res.cardType === 'WALLET_PICKER' ||
+        res.cardType === 'TRANSACTION_PREVIEW' ||
+        res.cardType === 'TRANSACTION_CREATED'
           ? res.cardType
           : res.cardType === 'RECOMMENDATION'
-            ? ('RECOMMENDATIONS' as const)
+            ? 'RECOMMENDATIONS'
             : undefined;
-      const aiMsg: ChatMessage = {
+
+      const aiMsg: LocalChatMessage = {
         id: `ai-${Date.now()}`,
         sender: 'AI',
-        text: res.reply,
+        text: cleanDisplayText(res.reply),
         timestamp: formatNowTime(),
         richCard,
         cardData: res.cardData ?? null,
+        card: res.card ?? null,
         actionStatus: res.actionExecuted
           ? 'CONFIRMED'
           : res.pendingConfirmation
@@ -250,20 +539,30 @@ export default function AiChatbotScreen() {
             : undefined,
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch (err) {
-      console.warn('[FinAI Chat] Falling back to local reply:', err);
-      const reply = generateAiReply(trimmed, liveContext);
-      const aiMsg: ChatMessage = {
-        id: `ai-${Date.now()}`,
+    } catch {
+      const errMsg: LocalChatMessage = {
+        id: `ai-err-${Date.now()}`,
         sender: 'AI',
-        text: reply.text,
+        text: 'Maaf, koneksi ke asisten sedang terganggu. Silakan coba kirim ulang.',
         timestamp: formatNowTime(),
-        richCard: reply.richCard,
+        isError: true,
+        retryText: trimmed,
       };
-      setMessages((prev) => [...prev, aiMsg]);
+      setMessages((prev) => [...prev, errMsg]);
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleShortcutPress = (item: (typeof EMPTY_SHORTCUTS)[number]) => {
+    if (item.autoSend) {
+      void sendMessage(item.prefill);
+      return;
+    }
+    setInputText(item.prefill);
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 60);
   };
 
   const handleChangeAiCategory = (
@@ -274,13 +573,13 @@ export default function AiChatbotScreen() {
       prev.map((m) =>
         m.id === msgId && m.cardData
           ? {
-            ...m,
-            cardData: {
-              ...m.cardData,
-              categoryId: category.id,
-              categoryName: category.label,
-            },
-          }
+              ...m,
+              cardData: {
+                ...m.cardData,
+                categoryId: category.id,
+                categoryName: category.label,
+              },
+            }
           : m
       )
     );
@@ -322,22 +621,31 @@ export default function AiChatbotScreen() {
         msg.cardData?.wallets && msg.cardData.wallets.length > 0
           ? msg.cardData.wallets
           : wallets
-            .filter((w) => !w.isArchived)
-            .map((w) => ({
-              id: w.id,
-              name: w.name,
-              type: w.type,
-              currentBalance: w.balance,
-              sufficient: w.balance >= firstSaving,
-            }));
+              .filter((w) => !w.isArchived)
+              .map((w) => ({
+                id: w.id,
+                name: w.name,
+                type: w.type,
+                currentBalance: w.balance,
+                sufficient: w.balance >= firstSaving,
+              }));
       const sourceWallets = rawWallets.filter((w) => w.id !== destWallet.id);
 
       if (firstSaving > 0 && sourceWallets.length > 0) {
-        const pickerMsg: ChatMessage = {
+        const pickerMsg: LocalChatMessage = {
           id: `ai-plan-src-wallet-${Date.now()}`,
           sender: 'AI',
-          text: `Siap! Target "${plan.targetName}" sudah disimpan ke dompet ${destWallet.name}. Untuk setoran ${periodWord} Rp ${firstSaving.toLocaleString('id-ID')}, mau ditransfer dari dompet mana?`,
+          text: `Target "${plan.targetName}" disimpan. Pilih dompet asal untuk setoran ${periodWord}.`,
           timestamp: formatNowTime(),
+          card: {
+            type: 'CHOICE_CARD',
+            title: `Setoran ${formatIDR(firstSaving)} dari dompet mana?`,
+            options: sourceWallets.map((w) => ({
+              label: w.name,
+              sublabel: formatIDR(w.currentBalance),
+              messageToSend: w.name,
+            })),
+          },
           richCard: 'WALLET_PICKER',
           cardData: {
             intent: 'GOAL_CONTRIBUTE',
@@ -355,27 +663,20 @@ export default function AiChatbotScreen() {
         };
         setMessages((prev) => [...prev, pickerMsg]);
       } else {
-        const previewMsg: ChatMessage = {
+        const previewMsg: LocalChatMessage = {
           id: `ai-plan-wallet-${Date.now()}`,
           sender: 'AI',
-          text: `Siap! Target "${plan.targetName}" telah disimpan dan dihubungkan dengan dompet ${destWallet.name}. Mau langsung setor tabungan ${periodWord} sebesar Rp ${firstSaving.toLocaleString('id-ID')}?`,
+          text: `Target "${plan.targetName}" sudah disimpan.`,
           timestamp: formatNowTime(),
-          richCard: firstSaving > 0 ? 'TRANSACTION_PREVIEW' : undefined,
-          actionStatus: firstSaving > 0 ? 'PENDING' : undefined,
-          cardData:
-            firstSaving > 0
-              ? {
-                intent: 'GOAL_CONTRIBUTE',
-                goalId,
-                type: 'EXPENSE',
-                amount: firstSaving,
-                note: `Setoran target ${plan.targetName}`,
-                walletId: destWallet.id,
-                walletName: destWallet.name,
-                currentWalletBalance: destWallet.currentBalance,
-                projectedWalletBalance: Math.max(0, destWallet.currentBalance - firstSaving),
-              }
-              : null,
+          card: {
+            type: 'ACTION_CARD',
+            badge: 'Target Tabungan Dibuat',
+            accent: 'blue',
+            title: plan.targetName,
+            amount: plan.targetAmount,
+            rows: [{ label: 'Dompet', value: destWallet.name }],
+            detailRoute: { type: 'goal', id: goalId },
+          },
         };
         setMessages((prev) => [...prev, previewMsg]);
       }
@@ -397,10 +698,10 @@ export default function AiChatbotScreen() {
     ) {
       const sourceWallet = data.wallets.find((w) => w.name === walletName);
       if (sourceWallet) {
-        const previewMsg: ChatMessage = {
+        const previewMsg: LocalChatMessage = {
           id: `ai-plan-preview-${Date.now()}`,
           sender: 'AI',
-          text: `Siap transfer Rp ${data.amount.toLocaleString('id-ID')} dari ${sourceWallet.name} ke ${data.destinationWalletName ?? 'dompet tabungan'} untuk "${data.note}". Tekan Konfirmasi untuk menyimpan.`,
+          text: `Konfirmasi transfer ${formatIDR(data.amount)} dari ${sourceWallet.name}.`,
           timestamp: formatNowTime(),
           richCard: 'TRANSACTION_PREVIEW',
           actionStatus: 'PENDING',
@@ -432,7 +733,7 @@ export default function AiChatbotScreen() {
     try {
       if (data.intent === 'UPSERT_BUDGET' && (data.categoryId || data.categoryName)) {
         const now = new Date();
-        await budgetService.upsertBudget({
+        const savedBudget = await budgetService.upsertBudget({
           categoryId: data.categoryId,
           categoryName: data.categoryName,
           month: now.getMonth() + 1,
@@ -445,14 +746,30 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                ...m,
-                richCard: 'TRANSACTION_CREATED',
-                actionStatus: 'CONFIRMED',
-                cardData: {
-                  ...data,
-                  newWalletBalance: data.amount,
-                },
-              }
+                  ...m,
+                  actionStatus: 'CONFIRMED',
+                  card: {
+                    type: 'ACTION_CARD',
+                    badge: 'Anggaran Disimpan',
+                    accent: 'blue',
+                    title: data.categoryName || 'Anggaran',
+                    amount: data.amount,
+                    rows: [
+                      {
+                        label: 'Periode',
+                        value:
+                          data.period === 'DAILY'
+                            ? 'Harian'
+                            : data.period === 'WEEKLY'
+                              ? 'Mingguan'
+                              : 'Bulanan',
+                      },
+                    ],
+                    detailRoute: savedBudget?.id
+                      ? { type: 'budget', id: savedBudget.id }
+                      : undefined,
+                  },
+                }
               : m
           )
         );
@@ -467,14 +784,17 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                ...m,
-                richCard: 'TRANSACTION_CREATED',
-                actionStatus: 'CONFIRMED',
-                cardData: {
-                  ...data,
-                  newWalletBalance: 0,
-                },
-              }
+                  ...m,
+                  actionStatus: 'CONFIRMED',
+                  card: {
+                    type: 'ACTION_CARD',
+                    badge: 'Anggaran Dihapus',
+                    accent: 'red',
+                    title: data.categoryName || 'Anggaran',
+                    amount: data.amount,
+                    rows: [],
+                  },
+                }
               : m
           )
         );
@@ -489,14 +809,17 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                ...m,
-                richCard: 'TRANSACTION_CREATED',
-                actionStatus: 'CONFIRMED',
-                cardData: {
-                  ...data,
-                  newWalletBalance: 0,
-                },
-              }
+                  ...m,
+                  actionStatus: 'CONFIRMED',
+                  card: {
+                    type: 'ACTION_CARD',
+                    badge: 'Tabungan Dihapus',
+                    accent: 'red',
+                    title: data.note || 'Target Tabungan',
+                    amount: data.amount,
+                    rows: [],
+                  },
+                }
               : m
           )
         );
@@ -505,7 +828,7 @@ export default function AiChatbotScreen() {
       }
 
       if (data.intent === 'GOAL_CONTRIBUTE' && data.goalId) {
-        const updatedGoal = await goalService.contributeGoal(data.goalId, data.amount, {
+        await goalService.contributeGoal(data.goalId, data.amount, {
           walletId: data.walletId,
           destinationWalletId: data.destinationWalletId,
           note: data.note,
@@ -515,25 +838,26 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                ...m,
-                richCard: 'TRANSACTION_CREATED',
-                actionStatus: 'CONFIRMED',
-                cardData: {
-                  ...data,
-                  newWalletBalance:
-                    data.type === 'TRANSFER'
-                      ? data.projectedWalletBalance ?? data.currentWalletBalance
-                      : Number(updatedGoal.currentAmount),
-                },
-              }
+                  ...m,
+                  actionStatus: 'CONFIRMED',
+                  card: {
+                    type: 'ACTION_CARD',
+                    badge: 'Setoran Tabungan',
+                    accent: 'green',
+                    title: data.note || 'Setoran Target',
+                    amount: data.amount,
+                    rows: [
+                      ...(data.walletName
+                        ? [{ label: 'Dompet', value: data.walletName }]
+                        : []),
+                    ],
+                    detailRoute: { type: 'goal', id: data.goalId! },
+                  },
+                }
               : m
           )
         );
-        showToast(
-          data.type === 'TRANSFER'
-            ? 'Transfer & setoran target tabungan berhasil dicatat'
-            : 'Setoran target tabungan berhasil dicatat'
-        );
+        showToast('Setoran target tabungan berhasil dicatat');
         return;
       }
 
@@ -554,20 +878,38 @@ export default function AiChatbotScreen() {
       });
 
       await refreshAllData();
+      const isTransfer = data.type === 'TRANSFER';
+      const isIncome = data.type === 'INCOME';
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msg.id
             ? {
-              ...m,
-              richCard: 'TRANSACTION_CREATED',
-              actionStatus: 'CONFIRMED',
-              cardData: {
-                ...data,
-                transactionId: created.id,
-                newWalletBalance:
-                  data.projectedWalletBalance ?? data.currentWalletBalance,
-              },
-            }
+                ...m,
+                actionStatus: 'CONFIRMED',
+                card: {
+                  type: 'ACTION_CARD',
+                  badge: isTransfer
+                    ? 'Transfer Berhasil'
+                    : isIncome
+                      ? 'Pemasukan Tercatat'
+                      : 'Pengeluaran Tercatat',
+                  accent: isTransfer ? 'blue' : isIncome ? 'green' : 'red',
+                  title: data.note || data.categoryName || 'Transaksi',
+                  amount: data.amount,
+                  rows: [
+                    ...(data.categoryName && !isTransfer
+                      ? [{ label: 'Kategori', value: data.categoryName }]
+                      : []),
+                    ...(data.walletName
+                      ? [{ label: isTransfer ? 'Dari' : 'Dompet', value: data.walletName }]
+                      : []),
+                    ...(data.destinationWalletName && isTransfer
+                      ? [{ label: 'Ke', value: data.destinationWalletName }]
+                      : []),
+                  ].slice(0, 3),
+                  detailRoute: { type: 'transaction', id: created.id },
+                },
+              }
             : m
         )
       );
@@ -593,7 +935,7 @@ export default function AiChatbotScreen() {
         await refreshAllData();
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === msg.id ? { ...m, actionStatus: 'CANCELLED' } : m
+            m.id === msg.id ? { ...m, actionStatus: 'CANCELLED', card: null } : m
           )
         );
         showToast('Transaksi dibatalkan');
@@ -610,20 +952,16 @@ export default function AiChatbotScreen() {
 
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === msg.id ? { ...m, actionStatus: 'CANCELLED' } : m
+        m.id === msg.id ? { ...m, actionStatus: 'CANCELLED', card: null } : m
       )
     );
     showToast('Pencatatan dibatalkan');
   };
 
   const handleResetChat = () => {
-    if (replyTimerRef.current) {
-      clearTimeout(replyTimerRef.current);
-      replyTimerRef.current = null;
-    }
     setIsTyping(false);
     setInputText('');
-    setMessages([getWelcomeMessage(welcomeProfile)]);
+    setMessages([]);
     showToast('Obrolan baru dimulai');
   };
 
@@ -633,41 +971,66 @@ export default function AiChatbotScreen() {
     <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* HEADER CHAT BIRU KOMPAK */}
-      <LinearGradient
-        colors={['#4B89FF', '#3B7AF5', '#2563EB']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.blueHeader, { paddingTop: Math.max(insets.top, 12) + 10 }]}
+      {/* 1. HEADER FIXED ROYAL BLUE */}
+      <View
+        style={[
+          styles.blueHeader,
+          { paddingTop: Math.max(insets.top, 12) + 6 },
+        ]}
       >
         <View style={styles.headerRow}>
           <View style={styles.headerLeft}>
             <View style={styles.headerAvatar}>
-              <Sparkles size={20} color="#FFFFFF" strokeWidth={2} />
+              <Sparkles size={18} color="#FFFFFF" strokeWidth={2.1} />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>FinAI Assistant</Text>
-              <View style={styles.statusRow}>
-                <View style={styles.onlineDot} />
-                <Text style={styles.headerSubtitle} numberOfLines={1}>
-                  Terhubung ke {wallets.length} Dompet
-                </Text>
-              </View>
+            <View style={styles.headerTextWrap}>
+              <Text style={styles.headerTitle}>Asisten Keuangan</Text>
+              <Text style={styles.headerSubtitle}>
+                Terhubung ke {activeWalletCount} dompet
+              </Text>
             </View>
           </View>
 
-          <Pressable
+          <TouchableOpacity
+            activeOpacity={0.75}
             onPress={() => setResetConfirmOpen(true)}
             accessibilityRole="button"
-            accessibilityLabel="Mulai obrolan baru"
-            style={({ pressed }) => [styles.resetBtn, pressed && { opacity: 0.75 }]}
+            accessibilityLabel="Reset percakapan"
+            style={styles.resetBtn}
           >
-            <RotateCcw size={18} color="#FFFFFF" strokeWidth={2} />
-          </Pressable>
+            <RotateCcw size={17} color="#FFFFFF" strokeWidth={2.1} />
+          </TouchableOpacity>
         </View>
-      </LinearGradient>
+      </View>
 
-      {/* BODY + KEYBOARD AVOIDING */}
+      {/* FLOATING SUMMARY PILL */}
+      <View style={styles.summaryPill}>
+        <View style={styles.summaryCol}>
+          <Text style={styles.summaryLabel}>Saldo Siap Pakai</Text>
+          <Text
+            style={[styles.summaryValueReady, Typography.tabularNums]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {formatIDR(readyBalance)}
+          </Text>
+        </View>
+        <View style={styles.summaryDivider} />
+        <View style={styles.summaryCol}>
+          <Text style={styles.summaryLabel}>Total Tabungan</Text>
+          <Text
+            style={[styles.summaryValueSavings, Typography.tabularNums]}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.85}
+          >
+            {formatIDR(savingsBalance)}
+          </Text>
+        </View>
+      </View>
+
+      {/* 2. AREA DAFTAR CHAT FLEXIBLE + FOOTER TERPADU */}
       <KeyboardAvoidingView
         style={styles.chatContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -676,125 +1039,227 @@ export default function AiChatbotScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.messagesScroll}
-          contentContainerStyle={styles.messagesContent}
+          contentContainerStyle={[
+            styles.messagesContent,
+            messages.length === 0 && styles.messagesContentEmpty,
+          ]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
-        >
-          {messages.map((msg) => {
-            const isUser = msg.sender === 'USER';
-
-            if (isUser) {
-              return (
-                <Animated.View
-                  key={msg.id}
-                  entering={FadeInUp.duration(220)}
-                  style={styles.userRow}
-                >
-                  <View style={styles.userBubble}>
-                    <Text style={styles.userText}>{msg.text}</Text>
-                  </View>
-                  <Text style={styles.timeRight}>{msg.timestamp}</Text>
-                </Animated.View>
-              );
+          onContentSizeChange={() => {
+            if (messages.length > 0 || isTyping) {
+              scrollRef.current?.scrollToEnd({ animated: true });
             }
-
-            return (
-              <Animated.View
-                key={msg.id}
-                entering={FadeInUp.duration(260)}
-                style={styles.aiBlock}
-              >
-                <AiSenderHeader timestamp={msg.timestamp} />
-
-                <View style={styles.aiBubble}>
-                  <Text style={styles.aiText}>{msg.text}</Text>
-                  {msg.richCard ? (
-                    <ChatRichCard
-                      type={msg.richCard}
-                      live={liveContext}
-                      cardData={msg.cardData}
-                      actionStatus={msg.actionStatus}
-                      isProcessingAction={processingMsgId === msg.id}
-                      categories={categories}
-                      onConfirmAction={() => void handleConfirmAiAction(msg)}
-                      onCancelAction={() => void handleCancelAiAction(msg)}
-                      onSelectWallet={(walletName) => handleSelectPickerWallet(msg, walletName)}
-                      onSelectPlanWallet={(wallet) => void handleSelectPlanWallet(msg, wallet)}
-                      onSelectCategory={(cat) => handleChangeAiCategory(msg.id, cat)}
-                    />
-                  ) : null}
-                </View>
-              </Animated.View>
-            );
-          })}
-
-          {isTyping ? <TypingIndicatorBubble /> : null}
-        </ScrollView>
-
-        {/* QUICK PROMPT CHIPS + INPUT BAR */}
-        <View
-          style={[
-            styles.composerDock,
-            { paddingBottom: isKeyboardOpen ? 12 : 104 + insets.bottom },
-          ]}
+          }}
         >
-          {!isKeyboardOpen ? (
-            <View style={styles.promptsWrap}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.promptsScroll}
-              >
-                {QUICK_PROMPTS.map((prompt) => (
-                  <Pressable
-                    key={prompt}
-                    onPress={() => sendMessage(prompt)}
-                    disabled={isTyping}
-                    style={({ pressed }) => [
-                      styles.promptChip,
-                      pressed && { backgroundColor: Colors.primarySoft },
-                    ]}
+          {messages.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <View style={styles.emptySquircle}>
+                <Sparkles size={26} color="#2563EB" strokeWidth={2} />
+              </View>
+              <Text style={styles.emptyTitle}>Ada yang bisa dibantu?</Text>
+              <Text style={styles.emptySubtitle}>
+                Catat transaksi, buat target tabungan, atau cek kondisi keuanganmu
+              </Text>
+
+              <View style={styles.shortcutGrid}>
+                {EMPTY_SHORTCUTS.map((item) => (
+                  <TouchableOpacity
+                    key={item.key}
+                    activeOpacity={0.75}
+                    onPress={() => handleShortcutPress(item)}
+                    style={styles.shortcutCard}
                   >
-                    <Text style={styles.promptChipText}>{prompt}</Text>
-                  </Pressable>
+                    <View
+                      style={[
+                        styles.shortcutIconBox,
+                        { backgroundColor: item.softBg },
+                      ]}
+                    >
+                      {item.icon === 'expense' ? (
+                        <Receipt size={17} color={item.accent} strokeWidth={2.1} />
+                      ) : item.icon === 'budget' ? (
+                        <PieChart size={17} color={item.accent} strokeWidth={2.1} />
+                      ) : item.icon === 'saving' ? (
+                        <PiggyBank size={17} color={item.accent} strokeWidth={2.1} />
+                      ) : (
+                        <BarChart3 size={17} color={item.accent} strokeWidth={2.1} />
+                      )}
+                    </View>
+                    <Text style={styles.shortcutTitle}>{item.title}</Text>
+                    <Text style={styles.shortcutExample} numberOfLines={1}>
+                      {item.example}
+                    </Text>
+                  </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
+            </View>
+          ) : (
+            messages.map((msg) => {
+              const isUser = msg.sender === 'USER';
+
+              if (isUser) {
+                return (
+                  <View key={msg.id} style={styles.userRow}>
+                    <View style={styles.userBubble}>
+                      <Text style={styles.userText}>{msg.text}</Text>
+                    </View>
+                    <Text style={styles.timeRight}>{msg.timestamp}</Text>
+                  </View>
+                );
+              }
+
+              return (
+                <View key={msg.id} style={styles.aiGroup}>
+                  <View style={styles.aiRow}>
+                    <View style={styles.aiMiniAvatar}>
+                      <Sparkles size={14} color="#2563EB" strokeWidth={2.1} />
+                    </View>
+                    <View style={styles.aiContentCol}>
+                      <View style={styles.aiBubble}>
+                        <Text style={styles.aiText}>
+                          {cleanDisplayText(msg.text)}
+                        </Text>
+
+                        {msg.isError && msg.retryText ? (
+                          <TouchableOpacity
+                            activeOpacity={0.75}
+                            onPress={() => void sendMessage(msg.retryText!)}
+                            style={styles.retryBtn}
+                          >
+                            <RefreshCw size={13} color="#2563EB" strokeWidth={2.2} />
+                            <Text style={styles.retryText}>Coba lagi</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+
+                      {msg.card ? (
+                        <View style={styles.cardSlot}>
+                          {msg.card.type === 'ACTION_CARD' ? (
+                            <StructuredActionCard
+                              card={msg.card}
+                              onOpenDetail={(route) => router.push(route)}
+                            />
+                          ) : msg.card.type === 'SUMMARY_CARD' ? (
+                            <StructuredSummaryCard
+                              card={msg.card}
+                              onOpenBudget={(budgetId) => router.push(`/budget/${budgetId}`)}
+                            />
+                          ) : (
+                            <StructuredChoiceCard
+                              card={msg.card}
+                              disabled={Boolean(msg.choiceResolved) || isTyping}
+                              onSelect={(text) => void sendMessage(text)}
+                            />
+                          )}
+                        </View>
+                      ) : msg.richCard ? (
+                        <View style={styles.cardSlot}>
+                          <ChatRichCard
+                            type={msg.richCard}
+                            live={liveContext}
+                            cardData={msg.cardData}
+                            actionStatus={msg.actionStatus}
+                            isProcessingAction={processingMsgId === msg.id}
+                            categories={categories}
+                            onConfirmAction={() => void handleConfirmAiAction(msg)}
+                            onCancelAction={() => void handleCancelAiAction(msg)}
+                            onSelectWallet={(walletName) =>
+                              handleSelectPickerWallet(msg, walletName)
+                            }
+                            onSelectPlanWallet={(wallet) =>
+                              void handleSelectPlanWallet(msg, wallet)
+                            }
+                            onSelectCategory={(cat) => handleChangeAiCategory(msg.id, cat)}
+                          />
+                        </View>
+                      ) : null}
+
+                      <Text style={styles.timeLeft}>{msg.timestamp}</Text>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+          )}
+
+          {isTyping ? (
+            <View style={styles.aiRow}>
+              <View style={styles.aiMiniAvatar}>
+                <Sparkles size={14} color="#2563EB" strokeWidth={2.1} />
+              </View>
+              <View style={styles.loadingBubble}>
+                <ActivityIndicator size="small" color="#2563EB" />
+                <Text style={styles.loadingBubbleText}>
+                  Sedang menyiapkan jawaban
+                </Text>
+              </View>
             </View>
           ) : null}
+        </ScrollView>
 
-          <View style={styles.inputRow}>
+        {/* 3. FOOTER BAWAH TERPADU (ANTI TUMPANG TINDIH DENGAN TAB BAR) */}
+        <View
+          style={[
+            styles.unifiedFooter,
+            {
+              marginBottom: isKeyboardOpen ? 0 : 104 + insets.bottom,
+              paddingBottom: 10,
+            },
+          ]}
+        >
+          {messages.length > 0 && !isKeyboardOpen ? (
+            <HorizontalScrollStrip
+              fadeColor="#FFFFFF"
+              contentContainerStyle={styles.promptsScroll}
+            >
+              {QUICK_SUGGESTIONS.map((prompt) => (
+                <TouchableOpacity
+                  key={prompt}
+                  activeOpacity={0.75}
+                  onPress={() => void sendMessage(prompt)}
+                  disabled={isTyping}
+                  style={styles.promptChip}
+                >
+                  <Text style={styles.promptChipText}>{prompt}</Text>
+                </TouchableOpacity>
+              ))}
+            </HorizontalScrollStrip>
+          ) : null}
+
+          <View
+            style={[
+              styles.inputBox,
+              inputFocused && styles.inputBoxFocused,
+            ]}
+          >
             <TextInput
-              style={[
-                styles.textInput,
-                inputFocused && styles.textInputFocused,
-              ]}
-              placeholder="Tanya soal keuanganmu"
+              ref={inputRef}
+              style={styles.textInput}
+              placeholder="Tulis transaksi atau pertanyaan"
               placeholderTextColor="#94A3B8"
               value={inputText}
               onChangeText={setInputText}
-              onFocus={() => setInputFocused(true)}
+              onFocus={() => {
+                setInputFocused(true);
+                setTimeout(() => {
+                  scrollRef.current?.scrollToEnd({ animated: true });
+                }, 120);
+              }}
               onBlur={() => setInputFocused(false)}
-              onSubmitEditing={() => sendMessage(inputText)}
-              returnKeyType="send"
               multiline
               textAlignVertical="center"
             />
 
-            <Pressable
-              onPress={() => sendMessage(inputText)}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={() => void sendMessage(inputText)}
               disabled={!canSend}
               accessibilityRole="button"
               accessibilityLabel="Kirim pesan"
-              style={({ pressed }) => [
-                styles.sendBtn,
-                !canSend && styles.sendBtnDisabled,
-                pressed && canSend && { opacity: 0.85 },
-              ]}
+              style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
             >
-              <Send size={18} color="#FFFFFF" strokeWidth={2.1} />
-            </Pressable>
+              <ArrowUp size={19} color="#FFFFFF" strokeWidth={2.4} />
+            </TouchableOpacity>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -802,7 +1267,7 @@ export default function AiChatbotScreen() {
       <ConfirmDialog
         visible={resetConfirmOpen}
         title="Mulai Obrolan Baru?"
-        message="Riwayat percakapan saat ini akan direset ke pesan awal."
+        message="Riwayat percakapan saat ini akan direset ke tampilan awal."
         confirmLabel="Reset"
         variant="primary"
         icon="reset"
@@ -816,16 +1281,23 @@ export default function AiChatbotScreen() {
   );
 }
 
+const SOFT_SHADOW = {
+  shadowColor: '#0F172A',
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.04,
+  shadowRadius: 10,
+  elevation: 2,
+};
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.canvas,
+    backgroundColor: '#F5F7FB',
   },
   blueHeader: {
+    backgroundColor: '#2563EB',
     paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 22,
-    borderBottomRightRadius: 22,
+    paddingBottom: 12,
   },
   headerRow: {
     flexDirection: 'row',
@@ -837,50 +1309,78 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 11,
   },
   headerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  headerTextWrap: {
+    flex: 1,
+  },
   headerTitle: {
-    fontFamily: FontFamily.bold,
-    fontSize: 16.5,
+    fontFamily: FontFamily.semibold,
+    fontSize: 17,
     color: '#FFFFFF',
-    letterSpacing: -0.2,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  onlineDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: '#34D399',
   },
   headerSubtitle: {
     fontFamily: FontFamily.regular,
-    fontSize: 11.5,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.88)',
+    marginTop: 1,
   },
   resetBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-
+  summaryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    ...SOFT_SHADOW,
+  },
+  summaryCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  summaryLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    color: '#64748B',
+  },
+  summaryValueReady: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14,
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  summaryValueSavings: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14,
+    color: '#2563EB',
+    marginTop: 2,
+  },
+  summaryDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#EEF2F7',
+    marginHorizontal: 12,
+  },
   chatContainer: {
     flex: 1,
   },
@@ -889,115 +1389,427 @@ const styles = StyleSheet.create({
   },
   messagesContent: {
     paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-    gap: 16,
+    paddingTop: 14,
+    paddingBottom: 24,
+    gap: 14,
   },
-
+  messagesContentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+  },
+  emptyWrap: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  emptySquircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    backgroundColor: '#EBF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 21,
+    color: '#0F172A',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+  },
+  emptySubtitle: {
+    fontFamily: FontFamily.regular,
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 6,
+    marginBottom: 20,
+    paddingHorizontal: 28,
+  },
+  shortcutGrid: {
+    width: '100%',
+    paddingHorizontal: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  shortcutCard: {
+    width: '48.4%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#EEF2F7',
+    padding: 14,
+    gap: 5,
+    ...SOFT_SHADOW,
+  },
+  shortcutIconBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  shortcutTitle: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13.5,
+    color: '#0F172A',
+  },
+  shortcutExample: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12,
+    color: '#64748B',
+  },
   userRow: {
     alignItems: 'flex-end',
   },
   userBubble: {
-    maxWidth: '82%',
-    backgroundColor: Colors.primary,
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    maxWidth: '80%',
+    backgroundColor: '#2563EB',
+    borderRadius: 20,
+    borderBottomRightRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   userText: {
     fontFamily: FontFamily.regular,
-    fontSize: 14,
+    fontSize: 15,
     color: '#FFFFFF',
-    lineHeight: 20,
+    lineHeight: 22,
   },
   timeRight: {
     fontFamily: FontFamily.regular,
-    fontSize: 10.5,
-    color: Colors.textMuted,
+    fontSize: 11,
+    color: '#94A3B8',
     marginTop: 4,
     marginRight: 4,
   },
-
-  aiBlock: {
+  aiGroup: {
     alignItems: 'flex-start',
   },
-  aiSenderHeader: {
+  aiRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
+    alignItems: 'flex-start',
+    gap: 8,
+    width: '100%',
   },
-  aiMiniBadge: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: Colors.primarySoft,
+  aiMiniAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#EBF2FF',
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 2,
   },
-  aiSenderName: {
-    fontFamily: FontFamily.semibold,
-    fontSize: 11.5,
-    color: '#475569',
-  },
-  aiSenderTime: {
-    fontFamily: FontFamily.regular,
-    fontSize: 11,
-    color: '#94A3B8',
+  aiContentCol: {
+    flex: 1,
+    maxWidth: '90%',
+    alignItems: 'flex-start',
   },
   aiBubble: {
-    width: '94%',
-    maxWidth: '94%',
-    backgroundColor: Colors.surface,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: '#EDF1F7',
     borderRadius: 20,
-    borderTopLeftRadius: 6,
+    borderBottomLeftRadius: 6,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    paddingVertical: 12,
+    gap: 8,
+    ...SOFT_SHADOW,
   },
   aiText: {
     fontFamily: FontFamily.regular,
-    fontSize: 14,
-    color: '#1F2937',
-    lineHeight: 21,
+    fontSize: 15,
+    color: '#0F172A',
+    lineHeight: 22,
   },
-
-  typingBubble: {
+  cardSlot: {
+    width: '100%',
+    marginTop: 8,
+  },
+  timeLeft: {
+    fontFamily: FontFamily.regular,
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  loadingBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EDF1F7',
+    borderRadius: 20,
+    borderBottomLeftRadius: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    ...SOFT_SHADOW,
+  },
+  loadingBubbleText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 13.5,
+    color: Colors.textSecondary,
+  },
+  retryBtn: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    backgroundColor: '#EBF2FF',
+  },
+  retryText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12.5,
+    color: '#2563EB',
+  },
+  structuredCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 20,
-    borderTopLeftRadius: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    borderColor: '#E8EDF5',
+    padding: 14,
+    gap: 10,
+    ...SOFT_SHADOW,
   },
-  typingDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-    backgroundColor: Colors.primary,
+  actionTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
-
-  composerDock: {
-    backgroundColor: Colors.surface,
+  actionBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: Radius.full,
+  },
+  actionBadgeText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11.5,
+  },
+  actionAmount: {
+    flexShrink: 1,
+    fontFamily: FontFamily.bold,
+    fontSize: 16,
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  actionTitle: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 14.5,
+    color: '#0F172A',
+  },
+  rowsWrap: {
+    gap: 6,
+    paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: Colors.border,
-    paddingTop: 10,
+    borderTopColor: '#F1F5F9',
+  },
+  kvRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  kvLabel: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12.5,
+    color: '#64748B',
+  },
+  kvValue: {
+    flexShrink: 1,
+    fontFamily: FontFamily.semibold,
+    fontSize: 12.5,
+    color: '#0F172A',
+    textAlign: 'right',
+  },
+  detailLinkBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  detailLinkText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13,
+    color: '#2563EB',
+  },
+  summaryCardTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14.5,
+    color: '#0F172A',
+  },
+  metricsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  metricTile: {
+    width: '48%',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 10,
+    gap: 3,
+  },
+  metricLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    color: '#64748B',
+  },
+  metricValue: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14,
+  },
+  itemsWrap: {
+    paddingTop: 4,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 7,
+    gap: 8,
+  },
+  itemRowDivider: {
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  budgetItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
     gap: 10,
   },
-  promptsWrap: {
-    height: 36,
+  budgetItemLeft: {
+    flex: 1,
+    paddingRight: 10,
+    gap: 3,
+  },
+  budgetItemTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  budgetItemTitle: {
+    flexShrink: 1,
+    fontFamily: FontFamily.semibold,
+    fontSize: 13,
+    color: '#0F172A',
+  },
+  budgetPeriodBadge: {
+    backgroundColor: '#EBF2FF',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  budgetPeriodText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 10.5,
+    color: '#2563EB',
+  },
+  budgetUsageText: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12,
+    color: '#64748B',
+  },
+  budgetItemRight: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  budgetUsableLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    color: '#64748B',
+  },
+  budgetUsableValue: {
+    fontFamily: FontFamily.bold,
+    fontSize: 14,
+  },
+  itemLabel: {
+    flex: 1,
+    fontFamily: FontFamily.medium,
+    fontSize: 12.5,
+    color: '#475569',
+  },
+  itemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 1,
+  },
+  itemValue: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12.5,
+    color: '#0F172A',
+  },
+  itemStatus: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11.5,
+    color: '#2563EB',
+  },
+  tipBox: {
+    backgroundColor: '#EBF2FF',
+    borderRadius: 12,
+    padding: 10,
+  },
+  tipText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12.5,
+    color: '#1E40AF',
+    lineHeight: 18,
+  },
+  choiceTitle: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13.5,
+    color: '#0F172A',
+  },
+  choiceWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  choicePill: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  choicePillDisabled: {
+    opacity: 0.55,
+  },
+  choicePillText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12.5,
+    color: '#0F172A',
+  },
+  choiceSublabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11,
+    color: '#64748B',
+  },
+  unifiedFooter: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E8EDF5',
+    paddingTop: 10,
+    gap: 8,
   },
   promptsScroll: {
     paddingHorizontal: 14,
@@ -1005,53 +1817,57 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   promptChip: {
-    height: 34,
-    backgroundColor: Colors.canvas,
+    height: 32,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: '#E2E8F0',
     borderRadius: Radius.full,
-    paddingHorizontal: 14,
+    paddingHorizontal: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   promptChipText: {
     fontFamily: FontFamily.medium,
-    fontSize: 12.5,
+    fontSize: 12,
     color: Colors.textSecondary,
   },
-  inputRow: {
+  inputBox: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 14,
-    gap: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 24,
+    marginHorizontal: 14,
+    paddingTop: 5,
+    paddingBottom: 5,
+    paddingRight: 5,
+    paddingLeft: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  inputBoxFocused: {
+    borderColor: '#2563EB',
+    backgroundColor: '#FFFFFF',
   },
   textInput: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 38,
     maxHeight: 100,
-    backgroundColor: Colors.canvas,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
     fontFamily: FontFamily.regular,
-    fontSize: 14,
-    lineHeight: 20,
-    color: Colors.textPrimary,
-  },
-  textInputFocused: {
-    borderColor: Colors.primary,
+    fontSize: 15,
+    lineHeight: 21,
+    color: '#0F172A',
+    paddingVertical: 6,
   },
   sendBtn: {
-    width: TouchTarget.minSize,
-    height: TouchTarget.minSize,
-    borderRadius: 22,
-    backgroundColor: Colors.primary,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#2563EB',
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendBtnDisabled: {
-    backgroundColor: '#93C5FD',
+    backgroundColor: '#CBD5E1',
   },
 });

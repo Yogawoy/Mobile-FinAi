@@ -3,6 +3,7 @@ import { CategoryManagerSheet } from '@/components/modals/CategoryManagerSheet';
 import { RecurringBillsSheet } from '@/components/modals/RecurringBillsSheet';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
 import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
@@ -423,7 +424,7 @@ export default function ProfileScreen() {
         }
       >
         <Text style={styles.sheetLabel}>Nama Lengkap</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.sheetInput}
           placeholder="Nama lengkap"
           placeholderTextColor="#94A3B8"
@@ -432,7 +433,7 @@ export default function ProfileScreen() {
         />
 
         <Text style={styles.sheetLabel}>Alamat Email</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.sheetInput}
           placeholder="nama@email.com"
           placeholderTextColor="#94A3B8"
@@ -445,7 +446,8 @@ export default function ProfileScreen() {
         <Text style={styles.sheetLabel}>Target Pemasukan Bulanan (Rp)</Text>
         <View style={styles.amountBox}>
           <Text style={styles.rpPrefix}>Rp</Text>
-          <TextInput
+          <FocusTextInput
+            showFocusBorder={false}
             style={[styles.amountInput, Typography.tabularNums]}
             placeholder="0"
             placeholderTextColor="#94A3B8"
@@ -487,7 +489,7 @@ export default function ProfileScreen() {
         }
       >
         <Text style={styles.sheetLabel}>Password Lama</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.sheetInput}
           placeholder="Masukkan password saat ini"
           placeholderTextColor="#94A3B8"
@@ -497,7 +499,7 @@ export default function ProfileScreen() {
         />
 
         <Text style={styles.sheetLabel}>Password Baru (Min. 8 Karakter)</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.sheetInput}
           placeholder="Minimal 8 karakter"
           placeholderTextColor="#94A3B8"
@@ -507,7 +509,7 @@ export default function ProfileScreen() {
         />
 
         <Text style={styles.sheetLabel}>Konfirmasi Password Baru</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.sheetInput}
           placeholder="Ulangi password baru"
           placeholderTextColor="#94A3B8"

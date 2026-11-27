@@ -13,7 +13,12 @@ import {
   saveGoalThemePref,
   type GoalThemePref,
 } from '@/lib/goalTheme';
-import { getWalletTheme, type WalletColorKey, type WalletTypeKey } from '@/lib/walletTheme';
+import {
+  getWalletTheme,
+  resolveWalletColorKey,
+  type WalletColorKey,
+  type WalletTypeKey,
+} from '@/lib/walletTheme';
 import {
   aiService,
   type BackendForecastResponse,
@@ -314,14 +319,7 @@ function mapWallet(w: BackendWallet): WalletItem {
           ? 'SAVINGS'
           : 'CASH';
 
-  const colorKey: WalletColorKey =
-    mappedType === 'BANK'
-      ? 'royal'
-      : mappedType === 'EWALLET'
-        ? 'teal'
-        : mappedType === 'SAVINGS'
-          ? 'navy'
-          : 'slate';
+  const colorKey: WalletColorKey = resolveWalletColorKey(w.color, mappedType);
 
   const theme = getWalletTheme(mappedType, colorKey);
 
@@ -373,6 +371,8 @@ function mapTransaction(tx: BackendTransaction): TransactionItem {
     targetWalletName: tx.destinationWallet?.name,
     dateLabel: `${hh}:${mm}`,
     dateGroup: formatDateGroupLabel(tx.transactionDate),
+    transactionDate: tx.transactionDate,
+    recurringId: tx.recurringId,
     amount: Number(tx.amount),
     type: tx.type,
     note: tx.note ?? undefined,
@@ -382,9 +382,12 @@ function mapTransaction(tx: BackendTransaction): TransactionItem {
 }
 
 function mapBudget(b: BackendBudget): BudgetItem {
+  const customName = b.name?.trim() || null;
   return {
     id: b.id,
-    name: b.category.name,
+    name: customName || b.category.name,
+    customName,
+    categoryName: b.category.name,
     limit: Number(b.limitAmount),
     spent: Number(b.spentAmount),
     iconKey: toBudgetIconKey(b.category.icon),

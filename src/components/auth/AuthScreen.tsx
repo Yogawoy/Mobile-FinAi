@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { KeyboardFocusScrollView } from '@/components/KeyboardFocusScrollView';
 import { useRouter } from 'expo-router';
 import { Lock, Mail, User } from 'lucide-react-native';
 import Animated, {
@@ -143,16 +144,11 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="light-content" />
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.flex}
+      <KeyboardFocusScrollView
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+        basePaddingBottom={0}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          bounces={false}
-          showsVerticalScrollIndicator={false}
-        >
           <AuthCurvedHeader
             title={isRegister ? 'Buat Akun' : 'Selamat Datang'}
             subtitle={
@@ -347,8 +343,7 @@ export function AuthScreen({ initialMode = 'login' }: AuthScreenProps) {
               </Pressable>
             </Animated.View>
           </LinearGradient>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardFocusScrollView>
 
       <ForgotPasswordSheet
         visible={forgotVisible}

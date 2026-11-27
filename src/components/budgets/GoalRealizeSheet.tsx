@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ArrowLeftRight, ShoppingBag } from 'lucide-react-native';
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { useToast } from '@/components/ui/ToastProvider';
 import { formatIDR } from '@/lib/format';
@@ -120,10 +121,9 @@ export function GoalRealizeSheet({
         </Text>
       </View>
 
-      <Text style={styles.sectionLabel}>Pilih Dompet Sumber Dana</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
+      <HorizontalScrollStrip
+        label="Pilih Dompet Sumber Dana"
+        fadeColor="#FFFFFF"
         contentContainerStyle={{ gap: 8, paddingBottom: 12 }}
       >
         {wallets.map((w) => {
@@ -156,7 +156,7 @@ export function GoalRealizeSheet({
             </Pressable>
           );
         })}
-      </ScrollView>
+      </HorizontalScrollStrip>
 
       <Text style={styles.sectionLabel}>Pilih Cara Penggunaan Dana</Text>
 
@@ -222,32 +222,32 @@ export function GoalRealizeSheet({
       </Pressable>
 
       {action === 'TRANSFER' && otherWallets.length > 0 ? (
-        <>
-          <Text style={styles.sectionLabel}>Pilih Dompet Harian Tujuan</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View style={styles.walletRow}>
-              {otherWallets.map((w) => {
-                const selected = w.id === destWalletId;
-                return (
-                  <Pressable
-                    key={w.id}
-                    onPress={() => setDestWalletId(w.id)}
-                    style={[styles.walletChip, selected && styles.walletChipActive]}
+        <HorizontalScrollStrip
+          label="Pilih Dompet Harian Tujuan"
+          fadeColor="#FFFFFF"
+        >
+          <View style={styles.walletRow}>
+            {otherWallets.map((w) => {
+              const selected = w.id === destWalletId;
+              return (
+                <Pressable
+                  key={w.id}
+                  onPress={() => setDestWalletId(w.id)}
+                  style={[styles.walletChip, selected && styles.walletChipActive]}
+                >
+                  <Text
+                    style={[
+                      styles.walletChipText,
+                      selected && styles.walletChipTextActive,
+                    ]}
                   >
-                    <Text
-                      style={[
-                        styles.walletChipText,
-                        selected && styles.walletChipTextActive,
-                      ]}
-                    >
-                      {w.shortName || w.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </ScrollView>
-        </>
+                    {w.shortName || w.name}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </HorizontalScrollStrip>
       ) : null}
     </BaseBottomSheet>
   );

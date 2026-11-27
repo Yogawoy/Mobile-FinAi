@@ -8,20 +8,13 @@ import {
   View,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Eye, EyeOff, Plus, Wallet } from 'lucide-react-native';
 import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  QuickTransactionSheet,
-  type QuickTransactionSubmitPayload,
-} from '@/components/transactions/QuickTransactionSheet';
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { RealisticWalletCard } from '@/components/wallets/RealisticWalletCard';
-import { WalletDetailSheet } from '@/components/wallets/WalletDetailSheet';
-import {
-  WalletFormSheet,
-  type WalletFormSubmitPayload,
-} from '@/components/wallets/WalletFormSheet';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
@@ -42,6 +35,7 @@ const FILTER_TABS: { key: WalletFilterKey; label: string }[] = [
 ];
 
 export default function WalletsTabScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const { showToast } = useToast();
@@ -60,11 +54,6 @@ export default function WalletsTabScreen() {
     setHideBalance(userProfile.hideBalanceOnOpen);
   }, [userProfile.hideBalanceOnOpen]);
   const [activeFilter, setActiveFilter] = useState<WalletFilterKey>('ALL');
-
-  const [selectedWallet, setSelectedWallet] = useState<WalletItem | null>(null);
-  const [formVisible, setFormVisible] = useState(false);
-  const [editingWallet, setEditingWallet] = useState<WalletItem | null>(null);
-  const [transferSheetVisible, setTransferSheetVisible] = useState(false);
 
   const activeWallets = useMemo(
     () => wallets.filter((w) => !w.isArchived),
@@ -106,126 +95,7 @@ export default function WalletsTabScreen() {
   }, [wallets, activeWallets, activeFilter]);
 
   const handleOpenAdd = () => {
-    setEditingWallet(null);
-    setFormVisible(true);
-  };
-
-  const handleOpenEdit = (wallet: WalletItem) => {
-    setEditingWallet(wallet);
-    setFormVisible(true);
-  };
-
-  const handleToggleArchive = async (wallet: WalletItem) => {
-    const nextArchived = !wallet.isArchived;
-    setWallets((prev) =>
-      prev.map((w) => (w.id === wallet.id ? { ...w, isArchived: nextArchived } : w))
-    );
-    try {
-      await walletService.updateWallet(wallet.id, { isArchived: nextArchived });
-      await refreshAllData();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Gagal memperbarui status dompet', 'error');
-    }
-  };
-
-  const handleWalletFormSubmit = async (payload: WalletFormSubmitPayload) => {
-    const theme = getWalletTheme(payload.type, payload.colorKey);
-    if (payload.id) {
-      setWallets((prev) =>
-        prev.map((w) =>
-          w.id === payload.id
-            ? {
-                ...w,
-                name: payload.name,
-                shortName: payload.name,
-                type: payload.type,
-                balance: payload.balance,
-                last4: payload.last4,
-                colorKey: payload.colorKey,
-                dotColor: theme.dotColor,
-                gradient: theme.gradient,
-              }
-            : w
-        )
-      );
-      try {
-        await walletService.updateWallet(payload.id, {
-          name: payload.name,
-          type: payload.type,
-          color: theme.dotColor,
-          accountNumber: payload.last4 || null,
-        });
-        await refreshAllData();
-      } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Gagal memperbarui dompet', 'error');
-      }
-      return;
-    }
-
-    const newWallet: WalletItem = {
-      id: `wallet-${Date.now()}`,
-      name: payload.name,
-      shortName: payload.name,
-      type: payload.type,
-      balance: payload.balance,
-      last4: payload.last4,
-      colorKey: payload.colorKey,
-      isArchived: false,
-      dotColor: theme.dotColor,
-      gradient: theme.gradient,
-    };
-    setWallets((prev) => [newWallet, ...prev]);
-    try {
-      await walletService.createWallet({
-        name: payload.name,
-        type: payload.type,
-        initialBalance: payload.balance,
-        color: theme.dotColor,
-        accountNumber: payload.last4 || null,
-      });
-      await refreshAllData();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Gagal membuat dompet', 'error');
-    }
-  };
-
-  const handleQuickTransferSubmit = (payload: QuickTransactionSubmitPayload) => {
-    const sourceWallet = wallets.find((w) => w.id === payload.walletId);
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-
-    if (payload.mode === 'TRANSFER' && payload.targetWalletId) {
-      const targetWallet = wallets.find((w) => w.id === payload.targetWalletId);
-      recordTransaction({
-        title: payload.note || `Transfer ke ${targetWallet?.name || 'Dompet'}`,
-        categoryKey: 'wallet',
-        categoryLabel: 'Transfer',
-        walletId: payload.walletId,
-        walletName: sourceWallet?.name || 'Dompet',
-        targetWalletId: payload.targetWalletId,
-        targetWalletName: targetWallet?.name,
-        dateLabel: `${hh}:${mm}`,
-        amount: payload.amount,
-        type: 'TRANSFER',
-        iconBg: '#EBF2FF',
-        iconColor: '#3B7AF5',
-      });
-      return;
-    }
-
-    recordTransaction({
-      title: payload.note || payload.category.label,
-      categoryKey: payload.category.key,
-      categoryLabel: payload.category.label,
-      walletId: payload.walletId,
-      walletName: sourceWallet?.name || 'Dompet',
-      dateLabel: `${hh}:${mm}`,
-      amount: payload.amount,
-      type: payload.mode,
-      iconBg: payload.category.iconBg,
-      iconColor: payload.category.iconColor,
-    });
+    router.push('/wallet/form' as Href);
   };
 
   return (
@@ -349,9 +219,10 @@ export default function WalletsTabScreen() {
         </Animated.View>
 
         {/* FILTER PILL HORIZONTAL */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
+        <HorizontalScrollStrip
+          fadeColor={Colors.canvas}
+          containerStyle={{ marginTop: 16 }}
+          headerStyle={{ paddingHorizontal: 16 }}
           contentContainerStyle={styles.filterScroll}
         >
           {FILTER_TABS.map((tab) => {
@@ -368,7 +239,7 @@ export default function WalletsTabScreen() {
               </Pressable>
             );
           })}
-        </ScrollView>
+        </HorizontalScrollStrip>
 
         {/* DAFTAR KARTU REKENING FISIK REALISTIS */}
         <View style={styles.cardsList}>
@@ -399,7 +270,9 @@ export default function WalletsTabScreen() {
                 <RealisticWalletCard
                   wallet={wallet}
                   hideBalance={hideBalance}
-                  onPress={() => setSelectedWallet(wallet)}
+                  onPress={() =>
+                    router.push(`/wallet/${encodeURIComponent(wallet.id)}` as Href)
+                  }
                 />
               </Animated.View>
             ))
@@ -418,38 +291,6 @@ export default function WalletsTabScreen() {
           ) : null}
         </View>
       </ScrollView>
-
-      {/* DETAIL & AKSI DOMPET */}
-      <WalletDetailSheet
-        visible={selectedWallet !== null}
-        wallet={selectedWallet}
-        totalActiveBalance={totalActiveBalance}
-        transactions={transactions}
-        onClose={() => setSelectedWallet(null)}
-        onTransfer={() => setTransferSheetVisible(true)}
-        onEdit={handleOpenEdit}
-        onToggleArchive={handleToggleArchive}
-      />
-
-      {/* TAMBAH / EDIT DOMPET */}
-      <WalletFormSheet
-        visible={formVisible}
-        editingWallet={editingWallet}
-        onClose={() => {
-          setFormVisible(false);
-          setEditingWallet(null);
-        }}
-        onSubmit={handleWalletFormSubmit}
-      />
-
-      {/* QUICK TRANSFER SHEET */}
-      <QuickTransactionSheet
-        visible={transferSheetVisible}
-        initialMode="TRANSFER"
-        wallets={activeWallets}
-        onClose={() => setTransferSheetVisible(false)}
-        onSubmit={handleQuickTransferSubmit}
-      />
     </View>
   );
 }
@@ -605,7 +446,6 @@ const styles = StyleSheet.create({
   filterScroll: {
     paddingHorizontal: 16,
     gap: 8,
-    marginTop: 16,
   },
   filterPill: {
     paddingHorizontal: 14,

@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { DEFAULT_PRODUCTION_API_URL, getApiBaseUrl } from '@/lib/api-client';
 import { setApiUrlOverride } from '@/lib/storage';
@@ -41,7 +43,10 @@ export function ServerSettingsModal({ visible, onClose, onUpdated }: ServerSetti
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.backdrop}
+      >
         <View style={styles.card}>
           <View style={styles.header}>
             <Text style={styles.title}>Konfigurasi Server API</Text>
@@ -72,7 +77,7 @@ export function ServerSettingsModal({ visible, onClose, onUpdated }: ServerSetti
             ))}
           </View>
 
-          <TextInput
+          <FocusTextInput
             style={styles.input}
             value={url}
             onChangeText={setUrl}
@@ -85,7 +90,7 @@ export function ServerSettingsModal({ visible, onClose, onUpdated }: ServerSetti
             <Text style={styles.saveText}>Simpan Server</Text>
           </TouchableOpacity>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

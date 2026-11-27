@@ -9,10 +9,6 @@ import {
   RecurringBillsSheet,
   type RecurringBillItem,
 } from '@/components/modals/RecurringBillsSheet';
-import {
-  QuickTransactionSheet,
-  type QuickTransactionSubmitPayload,
-} from '@/components/transactions/QuickTransactionSheet';
 import { FinAiLogoMark } from '@/components/brand/FinAiLogo';
 import { BUDGET_RULE_META, useFinance } from '@/context/FinanceContext';
 import { formatIDR } from '@/lib/format';
@@ -25,7 +21,7 @@ import { useResponsive } from '@/lib/responsive';
 import { getWalletTheme } from '@/lib/walletTheme';
 import { Colors, FontFamily, TouchTarget, Typography } from '@/theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import {
   ArrowDownLeft,
@@ -303,51 +299,7 @@ export default function HomeTabScreen() {
   }, [sawHealth, transactions.length]);
 
   const openQuickSheet = (mode: TransactionMode) => {
-    setSheetMode(mode);
-    setSheetVisible(true);
-  };
-
-
-  const handleQuickSubmit = (payload: QuickTransactionSubmitPayload) => {
-    const sourceWallet = wallets.find((w) => w.id === payload.walletId);
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-
-    if (payload.mode === 'TRANSFER' && payload.targetWalletId) {
-      const targetWallet = wallets.find((w) => w.id === payload.targetWalletId);
-      recordTransaction({
-        title: payload.note || `Transfer ke ${targetWallet?.name || 'Dompet'}`,
-        categoryKey: 'wallet',
-        categoryLabel: 'Transfer',
-        walletId: payload.walletId,
-        walletName: sourceWallet?.name || 'Dompet',
-        targetWalletId: payload.targetWalletId,
-        targetWalletName: targetWallet?.name,
-        dateLabel: `${hh}:${mm}`,
-        amount: payload.amount,
-        type: 'TRANSFER',
-        note: payload.note || undefined,
-        iconBg: '#EBF2FF',
-        iconColor: '#3B7AF5',
-      });
-      return;
-    }
-
-    const isIncome = payload.mode === 'INCOME';
-    recordTransaction({
-      title: payload.note || payload.category.label,
-      categoryKey: payload.category.key,
-      categoryLabel: payload.category.label,
-      walletId: payload.walletId,
-      walletName: sourceWallet?.name || 'Dompet',
-      dateLabel: `${hh}:${mm}`,
-      amount: payload.amount,
-      type: isIncome ? 'INCOME' : 'EXPENSE',
-      note: payload.note || undefined,
-      iconBg: payload.category.iconBg,
-      iconColor: payload.category.iconColor,
-    });
+    router.push(`/transaction/form?type=${mode}` as Href);
   };
 
   const handleRecordRecurringBill = (bill: RecurringBillItem) => {
@@ -875,7 +827,9 @@ export default function HomeTabScreen() {
                 return (
                   <Pressable
                     key={tx.id}
-                    onPress={() => router.push('/(tabs)/transactions')}
+                    onPress={() =>
+                      router.push(`/transaction/${encodeURIComponent(tx.id)}` as Href)
+                    }
                     style={({ pressed }) => [
                       styles.txRow,
                       idx > 0 && styles.txDivider,
@@ -914,14 +868,6 @@ export default function HomeTabScreen() {
           </View>
         </Animated.View>
       </ScrollView>
-
-      <QuickTransactionSheet
-        visible={sheetVisible}
-        initialMode={sheetMode}
-        wallets={wallets}
-        onClose={() => setSheetVisible(false)}
-        onSubmit={handleQuickSubmit}
-      />
 
       <NotificationSheet
         visible={showNotificationSheet}

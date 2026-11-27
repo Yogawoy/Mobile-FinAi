@@ -1,4 +1,5 @@
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   useFinance,
@@ -434,7 +435,7 @@ export default function RecurringScreen() {
         </View>
 
         <Text style={styles.label}>Nama Jadwal</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.input}
           placeholder="Contoh: Bayar Kos, Netflix, Gaji"
           placeholderTextColor="#94A3B8"
@@ -445,7 +446,8 @@ export default function RecurringScreen() {
         <Text style={styles.label}>Nominal (Rp)</Text>
         <View style={styles.amountBox}>
           <Text style={styles.rpPrefix}>Rp</Text>
-          <TextInput
+          <FocusTextInput
+            showFocusBorder={false}
             style={[styles.amountInput, Typography.tabularNums]}
             placeholder="0"
             placeholderTextColor="#94A3B8"
@@ -474,7 +476,7 @@ export default function RecurringScreen() {
         </View>
 
         <Text style={styles.label}>Jatuh Tempo Berikutnya</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.input}
           placeholder="Contoh: 01 Des 2026"
           placeholderTextColor="#94A3B8"

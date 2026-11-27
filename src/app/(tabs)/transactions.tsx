@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -8,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import {
@@ -25,13 +27,9 @@ import {
 } from 'lucide-react-native';
 import Animated, { Easing, FadeInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  QuickTransactionSheet,
-  type QuickTransactionSubmitPayload,
-} from '@/components/transactions/QuickTransactionSheet';
-import { TransactionDetailSheet } from '@/components/transactions/TransactionDetailSheet';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance } from '@/context/FinanceContext';
+import { useKeyboardFocusScroll } from '@/hooks/useKeyboardFocusScroll';
 import { formatIDR } from '@/lib/format';
 import {
   type CategoryIconKey,
@@ -69,6 +67,7 @@ function renderCategoryIcon(key: CategoryIconKey, color: string) {
 }
 
 export default function TransactionsTabScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
     wallets,
@@ -79,13 +78,12 @@ export default function TransactionsTabScreen() {
     refreshAllData,
   } = useFinance();
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('ALL');
   const [walletFilter, setWalletFilter] = useState<string>('ALL');
-
-  const [quickSheetVisible, setQuickSheetVisible] = useState(false);
-  const [editingTx, setEditingTx] = useState<TransactionItem | null>(null);
-  const [selectedTx, setSelectedTx] = useState<TransactionItem | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const { scrollViewRef, keyboardHeight, scrollToInput, onScroll } =
+    useKeyboardFocusScroll();
   const { showToast } = useToast();
 
   const handleRefresh = async () => {
@@ -146,76 +144,7 @@ export default function TransactionsTabScreen() {
   }, [filteredTransactions]);
 
   const handleOpenNew = () => {
-    setEditingTx(null);
-    setQuickSheetVisible(true);
-  };
-
-  const handleOpenEdit = (tx: TransactionItem) => {
-    setEditingTx(tx);
-    setQuickSheetVisible(true);
-  };
-
-  const handleDeleteTx = (tx: TransactionItem) => {
-    deleteTransaction(tx.id);
-  };
-
-  const handleSubmitTransaction = (payload: QuickTransactionSubmitPayload) => {
-    const sourceWallet = wallets.find((w) => w.id === payload.walletId);
-    const targetWallet = payload.targetWalletId
-      ? wallets.find((w) => w.id === payload.targetWalletId)
-      : undefined;
-
-    const isTransfer = payload.mode === 'TRANSFER';
-
-    if (payload.id) {
-      const existing = transactions.find((t) => t.id === payload.id);
-      if (!existing) return;
-      updateTransaction({
-        ...existing,
-        title:
-          payload.note ||
-          (isTransfer
-            ? `Transfer ke ${targetWallet?.name || 'Dompet'}`
-            : payload.category.label),
-        categoryKey: isTransfer ? 'wallet' : payload.category.key,
-        categoryLabel: isTransfer ? 'Transfer' : payload.category.label,
-        walletId: payload.walletId,
-        walletName: sourceWallet?.name || 'Dompet',
-        targetWalletId: isTransfer ? payload.targetWalletId : undefined,
-        targetWalletName: isTransfer ? targetWallet?.name : undefined,
-        amount: payload.amount,
-        type: payload.mode,
-        note: payload.note || existing.note,
-        iconBg: isTransfer ? '#EBF2FF' : payload.category.iconBg,
-        iconColor: isTransfer ? '#3B7AF5' : payload.category.iconColor,
-      });
-      return;
-    }
-
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, '0');
-    const mm = String(now.getMinutes()).padStart(2, '0');
-
-    recordTransaction({
-      title:
-        payload.note ||
-        (isTransfer
-          ? `Transfer ke ${targetWallet?.name || 'Dompet'}`
-          : payload.category.label),
-      categoryKey: isTransfer ? 'wallet' : payload.category.key,
-      categoryLabel: isTransfer ? 'Transfer' : payload.category.label,
-      walletId: payload.walletId,
-      walletName: sourceWallet?.name || 'Dompet',
-      targetWalletId: isTransfer ? payload.targetWalletId : undefined,
-      targetWalletName: isTransfer ? targetWallet?.name : undefined,
-      dateGroup: 'Hari Ini 22 Nov 2026',
-      dateLabel: `${hh}:${mm}`,
-      amount: payload.amount,
-      type: payload.mode,
-      note: payload.note || undefined,
-      iconBg: isTransfer ? '#EBF2FF' : payload.category.iconBg,
-      iconColor: isTransfer ? '#3B7AF5' : payload.category.iconColor,
-    });
+    router.push('/transaction/form' as Href);
   };
 
   const resetFilters = () => {
@@ -231,8 +160,11 @@ export default function TransactionsTabScreen() {
     <View style={styles.root}>
       <StatusBar style="light" />
       <ScrollView
+        ref={scrollViewRef}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
+        onScroll={onScroll}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -243,7 +175,9 @@ export default function TransactionsTabScreen() {
         }
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingBottom: 112 + insets.bottom },
+          {
+            paddingBottom: 112 + insets.bottom,
+          },
         ]}
       >
         {/* HEADER BIRU KOMPAK */}
@@ -302,13 +236,23 @@ export default function TransactionsTabScreen() {
         {/* PENCARIAN & FILTER 1 JEMPOL */}
         <View style={styles.filterSection}>
           {/* Search Bar */}
-          <View style={styles.searchBox}>
+          <View
+            style={[
+              styles.searchBox,
+              searchFocused && { borderColor: '#2563EB' },
+            ]}
+          >
             <Search size={18} color={Colors.textMuted} strokeWidth={1.85} />
             <TextInput
               style={styles.searchInput}
               placeholder="Cari catatan, kategori, atau dompet"
               placeholderTextColor="#94A3B8"
               value={searchQuery}
+              onFocus={(e) => {
+                setSearchFocused(true);
+                scrollToInput(e);
+              }}
+              onBlur={() => setSearchFocused(false)}
               onChangeText={setSearchQuery}
               returnKeyType="search"
             />
@@ -460,7 +404,9 @@ export default function TransactionsTabScreen() {
                     return (
                       <Pressable
                         key={tx.id}
-                        onPress={() => setSelectedTx(tx)}
+                        onPress={() =>
+                          router.push(`/transaction/${encodeURIComponent(tx.id)}` as Href)
+                        }
                         style={({ pressed }) => [
                           styles.txRow,
                           idx > 0 && styles.txDivider,
@@ -502,28 +448,6 @@ export default function TransactionsTabScreen() {
           })
         )}
       </ScrollView>
-
-      {/* SHEET CATAT / EDIT TRANSAKSI */}
-      <QuickTransactionSheet
-        visible={quickSheetVisible}
-        initialMode={editingTx?.type ?? 'EXPENSE'}
-        wallets={wallets}
-        editingTransaction={editingTx}
-        onClose={() => {
-          setQuickSheetVisible(false);
-          setEditingTx(null);
-        }}
-        onSubmit={handleSubmitTransaction}
-      />
-
-      {/* SHEET DETAIL, EDIT & HAPUS */}
-      <TransactionDetailSheet
-        visible={selectedTx !== null}
-        transaction={selectedTx}
-        onClose={() => setSelectedTx(null)}
-        onEdit={handleOpenEdit}
-        onDelete={handleDeleteTx}
-      />
     </View>
   );
 }

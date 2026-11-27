@@ -1,4 +1,6 @@
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
+import { useKeyboardFocusScroll } from '@/hooks/useKeyboardFocusScroll';
 import { useToast } from '@/components/ui/ToastProvider';
 import { WalletBrandLogo } from '@/components/ui/WalletBrandLogo';
 import {
@@ -180,7 +182,7 @@ const PRESET_WALLETS: SetupWalletDraft[] = [
     name: 'CIMB Niaga',
     type: 'BANK',
     typeLabel: 'Bank',
-    colorKey: 'slate',
+    colorKey: 'crimson',
     selected: false,
     balanceText: '',
   },
@@ -225,7 +227,7 @@ const PRESET_WALLETS: SetupWalletDraft[] = [
     name: 'OVO',
     type: 'EWALLET',
     typeLabel: 'E-Wallet',
-    colorKey: 'slate',
+    colorKey: 'obsidian',
     selected: false,
     balanceText: '',
   },
@@ -243,7 +245,7 @@ const PRESET_WALLETS: SetupWalletDraft[] = [
     name: 'LinkAja',
     type: 'EWALLET',
     typeLabel: 'E-Wallet',
-    colorKey: 'slate',
+    colorKey: 'crimson',
     selected: false,
     balanceText: '',
   },
@@ -621,7 +623,7 @@ export default function SetupWizardScreen() {
       EWALLET: 'teal',
       E_WALLET: 'teal',
       SAVINGS: 'navy',
-      CASH: 'slate',
+      CASH: 'obsidian',
     };
     const typeLabelMap: Record<WalletTypeKey, string> = {
       BANK: 'Bank',
@@ -648,7 +650,12 @@ export default function SetupWizardScreen() {
     showToast(`${trimmed} ditambahkan`);
   };
 
-  const scrollRef = useRef<ComponentRef<typeof ScrollView>>(null);
+  const {
+    scrollViewRef: scrollRef,
+    keyboardHeight: setupKeyboardHeight,
+    scrollToInput,
+    onScroll: onSetupScroll,
+  } = useKeyboardFocusScroll({ stickyBottomHeight: 76 });
   const customBalanceRef = useRef<ComponentRef<typeof TextInput>>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -813,8 +820,13 @@ export default function SetupWizardScreen() {
           style={[styles.flex, { overflow: 'hidden' }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          scrollEventThrottle={16}
+          onScroll={onSetupScroll}
           bounces={false}
-          contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            paddingBottom: 24,
+          }}
         >
           {/* HEADER GRADIEN BIRU PRESISI */}
           <LinearGradient
@@ -975,6 +987,7 @@ export default function SetupWizardScreen() {
                       isSmallWidth && { fontSize: 20 },
                     ]}
                     value={incomeText}
+                    onFocus={(e) => scrollToInput(e)}
                     onChangeText={(val) => setIncomeText(formatThousands(val))}
                     keyboardType="numeric"
                     placeholder="0"
@@ -1497,7 +1510,8 @@ export default function SetupWizardScreen() {
             <Text style={styles.microLabel}>SALDO SAAT INI</Text>
             <View style={styles.sheetBalanceWell}>
               <Text style={styles.sheetRpPrefix}>Rp</Text>
-              <TextInput
+              <FocusTextInput
+                showFocusBorder={false}
                 style={[styles.sheetBalanceInput, Typography.tabularNums]}
                 value={draftBalanceText}
                 onChangeText={(val) => setDraftBalanceText(formatThousands(val))}
@@ -1569,7 +1583,7 @@ export default function SetupWizardScreen() {
       >
         <View style={styles.sheetBodyGap}>
           <Text style={styles.microLabel}>NAMA DOMPET / REKENING</Text>
-          <TextInput
+          <FocusTextInput
             style={styles.customNameInput}
             placeholder="Contoh: Blu BCA, Allo Bank, Kas Kantor"
             placeholderTextColor="#94A3B8"
@@ -1622,8 +1636,9 @@ export default function SetupWizardScreen() {
             style={styles.walletInputWell}
           >
             <Text style={styles.walletInputPrefix}>Rp</Text>
-            <TextInput
+            <FocusTextInput
               ref={customBalanceRef}
+              showFocusBorder={false}
               style={[styles.walletInput, Typography.tabularNums]}
               placeholder="0"
               placeholderTextColor="#94A3B8"

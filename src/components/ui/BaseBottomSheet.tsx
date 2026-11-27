@@ -12,6 +12,10 @@ import {
 import { X } from 'lucide-react-native';
 import Animated, { FadeIn, SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  KeyboardFocusScrollContext,
+  useKeyboardFocusScroll,
+} from '@/hooks/useKeyboardFocusScroll';
 import { useResponsive } from '@/lib/responsive';
 import { Colors, FontFamily, TouchTarget } from '@/theme/tokens';
 
@@ -32,6 +36,10 @@ export function BaseBottomSheet({
 }: BaseBottomSheetProps) {
   const insets = useSafeAreaInsets();
   const { height } = useResponsive();
+  const controller = useKeyboardFocusScroll({
+    stickyBottomHeight: footer ? 72 : 0,
+    breathingRoom: 28,
+  });
 
   return (
     <Modal
@@ -41,51 +49,62 @@ export function BaseBottomSheet({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.backdrop}
-      >
-        <Animated.View entering={FadeIn.duration(180)} style={styles.backdropFill}>
-          <Pressable style={styles.dismissArea} onPress={onClose} />
-        </Animated.View>
-
-        <Animated.View
-          entering={SlideInDown.duration(260)}
-          style={[
-            styles.sheet,
-            {
-              maxHeight: height * 0.88,
-              paddingBottom: Math.max(insets.bottom, 16),
-            },
-          ]}
+      <KeyboardFocusScrollContext.Provider value={controller}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.backdrop}
         >
-          <View style={styles.dragHandle} />
+          <Animated.View entering={FadeIn.duration(180)} style={styles.backdropFill}>
+            <Pressable style={styles.dismissArea} onPress={onClose} />
+          </Animated.View>
 
-          <View style={styles.headerRow}>
-            <Text style={styles.sheetTitle} numberOfLines={1}>
-              {title}
-            </Text>
-            <Pressable
-              onPress={onClose}
-              accessibilityRole="button"
-              accessibilityLabel={`Tutup ${title}`}
-              style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
-            >
-              <X size={20} color={Colors.textMuted} strokeWidth={1.9} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.scrollBody}
+          <Animated.View
+            entering={SlideInDown.duration(260)}
+            style={[
+              styles.sheet,
+              {
+                maxHeight:
+                  controller.keyboardHeight > 0
+                    ? Math.max(260, height - controller.keyboardHeight - 24)
+                    : height * 0.88,
+                paddingBottom: Math.max(insets.bottom, 16),
+              },
+            ]}
           >
-            {children}
-          </ScrollView>
+            <View style={styles.dragHandle} />
 
-          {footer ? <View style={styles.footer}>{footer}</View> : null}
-        </Animated.View>
-      </KeyboardAvoidingView>
+            <View style={styles.headerRow}>
+              <Text style={styles.sheetTitle} numberOfLines={1}>
+                {title}
+              </Text>
+              <Pressable
+                onPress={onClose}
+                accessibilityRole="button"
+                accessibilityLabel={`Tutup ${title}`}
+                style={({ pressed }) => [styles.closeBtn, pressed && { opacity: 0.7 }]}
+              >
+                <X size={20} color={Colors.textMuted} strokeWidth={1.9} />
+              </Pressable>
+            </View>
+
+            <ScrollView
+              ref={controller.scrollViewRef}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              scrollEventThrottle={16}
+              onScroll={controller.onScroll}
+              contentContainerStyle={[
+                styles.scrollBody,
+                controller.keyboardHeight > 0 && { paddingBottom: 28 },
+              ]}
+            >
+              {children}
+            </ScrollView>
+
+            {footer ? <View style={styles.footer}>{footer}</View> : null}
+          </Animated.View>
+        </KeyboardAvoidingView>
+      </KeyboardFocusScrollContext.Provider>
     </Modal>
   );
 }

@@ -1,17 +1,76 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { Check } from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import { type WalletItem } from '@/lib/mockData';
 import {
   getWalletTheme,
   WALLET_COLOR_OPTIONS,
   type WalletColorKey,
+  type WalletTheme,
   type WalletTypeKey,
 } from '@/lib/walletTheme';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 import { RealisticWalletCard } from './RealisticWalletCard';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function ColorSwatchButton({
+  option,
+  selected,
+  onSelect,
+}: {
+  option: WalletTheme;
+  selected: boolean;
+  onSelect: (key: WalletColorKey) => void;
+}) {
+  const reducedMotion = useReducedMotion();
+  const pressScale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pressScale.value }],
+  }));
+
+  const handlePressIn = () => {
+    if (reducedMotion) return;
+    pressScale.value = withSpring(0.92, { damping: 16, stiffness: 320 });
+  };
+
+  const handlePressOut = () => {
+    if (reducedMotion) return;
+    pressScale.value = withSpring(1, { damping: 14, stiffness: 260 });
+  };
+
+  return (
+    <View style={styles.colorCell}>
+      <AnimatedPressable
+        onPress={() => onSelect(option.key)}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        accessibilityRole="button"
+        accessibilityLabel={`Pilih warna ${option.label}`}
+        accessibilityState={{ selected }}
+        style={[
+          styles.colorRing,
+          selected && { borderColor: option.primary },
+          animatedStyle,
+        ]}
+      >
+        <View style={[styles.colorCircle, { backgroundColor: option.primary }]}>
+          {selected ? <Check size={16} color="#FFFFFF" strokeWidth={2.5} /> : null}
+        </View>
+      </AnimatedPressable>
+    </View>
+  );
+}
 
 export interface WalletFormSubmitPayload {
   id?: string;
@@ -33,7 +92,7 @@ const WALLET_TYPES: { key: WalletTypeKey; label: string; defaultColor: WalletCol
   { key: 'BANK', label: 'Bank', defaultColor: 'royal' },
   { key: 'EWALLET', label: 'E-Wallet', defaultColor: 'teal' },
   { key: 'SAVINGS', label: 'Tabungan', defaultColor: 'navy' },
-  { key: 'CASH', label: 'Tunai', defaultColor: 'slate' },
+  { key: 'CASH', label: 'Tunai', defaultColor: 'obsidian' },
 ];
 
 function formatThousands(raw: string): string {
@@ -150,8 +209,25 @@ export function WalletFormSheet({
         <RealisticWalletCard wallet={previewWallet} compact />
       </View>
 
+      <View style={styles.colorHeaderRow}>
+        <Text style={[styles.label, styles.colorHeaderLabel]}>Warna Kartu</Text>
+        <Text style={styles.colorSelectedName}>
+          {getWalletTheme(type, colorKey).label}
+        </Text>
+      </View>
+      <View style={styles.colorGrid}>
+        {WALLET_COLOR_OPTIONS.map((opt) => (
+          <ColorSwatchButton
+            key={opt.key}
+            option={opt}
+            selected={colorKey === opt.key}
+            onSelect={setColorKey}
+          />
+        ))}
+      </View>
+
       <Text style={styles.label}>Nama Dompet</Text>
-      <TextInput
+      <FocusTextInput
         style={styles.input}
         placeholder="Contoh: Bank BCA, OVO, Dana Darurat"
         placeholderTextColor="#94A3B8"
@@ -180,7 +256,8 @@ export function WalletFormSheet({
       <Text style={styles.label}>Saldo Awal (Rp)</Text>
       <View style={styles.amountBox}>
         <Text style={styles.rpPrefix}>Rp</Text>
-        <TextInput
+        <FocusTextInput
+          showFocusBorder={false}
           style={[styles.amountInput, Typography.tabularNums]}
           placeholder="0"
           placeholderTextColor="#94A3B8"
@@ -191,7 +268,7 @@ export function WalletFormSheet({
       </View>
 
       <Text style={styles.label}>4 Digit Akhir (Opsional)</Text>
-      <TextInput
+      <FocusTextInput
         style={[styles.input, Typography.tabularNums]}
         placeholder="Contoh: 4821"
         placeholderTextColor="#94A3B8"
@@ -200,28 +277,6 @@ export function WalletFormSheet({
         value={last4}
         onChangeText={(val) => setLast4(val.replace(/[^0-9]/g, ''))}
       />
-
-      <Text style={styles.label}>Warna Kartu</Text>
-      <View style={styles.colorRow}>
-        {WALLET_COLOR_OPTIONS.map((opt) => {
-          const selected = colorKey === opt.key;
-          return (
-            <Pressable
-              key={opt.key}
-              onPress={() => setColorKey(opt.key)}
-              accessibilityRole="button"
-              accessibilityLabel={`Pilih warna ${opt.label}`}
-              style={[
-                styles.colorCircle,
-                { backgroundColor: opt.dotColor },
-                selected && styles.colorCircleSelected,
-              ]}
-            >
-              {selected ? <Check size={16} color="#FFFFFF" strokeWidth={2.5} /> : null}
-            </Pressable>
-          );
-        })}
-      </View>
     </BaseBottomSheet>
   );
 }
@@ -296,23 +351,44 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: Colors.textPrimary,
   },
-  colorRow: {
+  colorHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    justifyContent: 'space-between',
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  colorHeaderLabel: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  colorSelectedName: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+    color: Colors.textPrimary,
+  },
+  colorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     paddingVertical: 4,
   },
+  colorCell: {
+    width: '16.666%',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  colorRing: {
+    padding: 3,
+    borderRadius: 999,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
   colorCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  colorCircleSelected: {
-    borderWidth: 3,
-    borderColor: '#DBEAFE',
-    transform: [{ scale: 1.08 }],
   },
   saveBtn: {
     height: 50,

@@ -1,16 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { X } from 'lucide-react-native';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
+import {
+  KeyboardFocusScrollContext,
+  useKeyboardFocusScroll,
+} from '@/hooks/useKeyboardFocusScroll';
 import { FinColors, FinRadius } from '@/constants/theme';
 import { WALLET_THEMES, type WalletThemeKey } from '@/constants/walletTheme';
 import { extractErrorMessage } from '@/lib/api-client';
@@ -39,6 +45,7 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
   const [balance, setBalance] = useState('');
   const [color, setColor] = useState<WalletThemeKey>('periwinkle');
   const { showToast } = useToast();
+  const kbController = useKeyboardFocusScroll({ stickyBottomHeight: 72 });
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -109,16 +116,29 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <Text style={styles.title}>{isEditing ? 'Edit Dompet' : 'Tambah Dompet'}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={20} color={FinColors.textSecondary} />
-            </TouchableOpacity>
-          </View>
+      <KeyboardFocusScrollContext.Provider value={kbController}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.backdrop}
+        >
+          <View style={styles.sheet}>
+            <View style={styles.header}>
+              <Text style={styles.title}>{isEditing ? 'Edit Dompet' : 'Tambah Dompet'}</Text>
+              <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                <X size={20} color={FinColors.textSecondary} />
+              </TouchableOpacity>
+            </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView
+              ref={kbController.scrollViewRef}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              scrollEventThrottle={16}
+              onScroll={kbController.onScroll}
+              contentContainerStyle={{
+                paddingBottom: 12,
+              }}
+            >
             <Text style={styles.label}>Jenis Dompet</Text>
             <View style={styles.row}>
               {WALLET_TYPES.map((item) => {
@@ -138,7 +158,7 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
             </View>
 
             <Text style={styles.label}>Nama Dompet</Text>
-            <TextInput
+            <FocusTextInput
               style={styles.input}
               placeholder="Contoh: BCA Utama / GoPay"
               placeholderTextColor={FinColors.textMuted}
@@ -147,7 +167,7 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
             />
 
             <Text style={styles.label}>Institusi / Penyedia (opsional)</Text>
-            <TextInput
+            <FocusTextInput
               style={styles.input}
               placeholder="Contoh: BCA, Mandiri, Gojek"
               placeholderTextColor={FinColors.textMuted}
@@ -156,7 +176,7 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
             />
 
             <Text style={styles.label}>4 Digit Terakhir Rekening/No HP (opsional)</Text>
-            <TextInput
+            <FocusTextInput
               style={styles.input}
               placeholder="Contoh: 4821"
               placeholderTextColor={FinColors.textMuted}
@@ -168,7 +188,7 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
             {!isEditing ? (
               <>
                 <Text style={styles.label}>Saldo Awal (Rp)</Text>
-                <TextInput
+                <FocusTextInput
                   style={styles.input}
                   placeholder="0"
                   placeholderTextColor={FinColors.textMuted}
@@ -217,8 +237,9 @@ export function WalletModal({ visible, initialWallet, onClose, onSaved }: Wallet
               </Text>
             )}
           </TouchableOpacity>
-        </View>
-      </View>
+          </View>
+        </KeyboardAvoidingView>
+      </KeyboardFocusScrollContext.Provider>
     </Modal>
   );
 }

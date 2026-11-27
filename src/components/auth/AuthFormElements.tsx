@@ -1,3 +1,4 @@
+import { useKeyboardFocusScrollContext } from '@/hooks/useKeyboardFocusScroll';
 import {
   Colors,
   FontFamily,
@@ -51,6 +52,7 @@ export const AuthInput = forwardRef<ComponentRef<typeof TextInput>, AuthInputPro
   },
   ref
 ) {
+  const kbFocus = useKeyboardFocusScrollContext();
   const [focused, setFocused] = useState(false);
   const internalRef = useRef<ComponentRef<typeof TextInput>>(null);
 
@@ -76,6 +78,7 @@ export const AuthInput = forwardRef<ComponentRef<typeof TextInput>, AuthInputPro
           {...inputProps}
           onFocus={(e) => {
             setFocused(true);
+            kbFocus?.scrollToInput(e);
             onFocus?.(e);
           }}
           onBlur={(e) => {

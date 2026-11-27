@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Check, Plus } from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import {
   EXPENSE_CATEGORIES,
@@ -111,7 +112,7 @@ export function CategoryManagerSheet({
 
       <View style={styles.addCard}>
         <Text style={styles.addTitle}>Tambah Kategori Baru</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.input}
           placeholder="Contoh: Skincare, Olahraga, Bonus"
           placeholderTextColor="#94A3B8"

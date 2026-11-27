@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ChevronRight, LogOut, Sparkles, Tag } from 'lucide-react-native';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import { Colors, FontFamily, Radius, TouchTarget, Typography } from '@/theme/tokens';
 
@@ -87,7 +88,7 @@ export function ProfileSheet({
         </View>
 
         <Text style={styles.label}>Nama Tampilan</Text>
-        <TextInput
+        <FocusTextInput
           style={styles.input}
           placeholder="Nama lengkap"
           placeholderTextColor="#94A3B8"
@@ -98,7 +99,8 @@ export function ProfileSheet({
         <Text style={styles.label}>Target Pemasukan Bulanan (Rp)</Text>
         <View style={styles.amountBox}>
           <Text style={styles.rpPrefix}>Rp</Text>
-          <TextInput
+          <FocusTextInput
+            showFocusBorder={false}
             style={[styles.amountInput, Typography.tabularNums]}
             placeholder="0"
             placeholderTextColor="#94A3B8"

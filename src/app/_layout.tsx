@@ -79,10 +79,14 @@ export default function RootLayout() {
             <Stack.Screen name="recurring" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="categories" options={{ animation: 'slide_from_right' }} />
             <Stack.Screen name="forecast" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="budget/[id]" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="budget/form" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="goal/[id]" options={{ animation: 'slide_from_right' }} />
-            <Stack.Screen name="goal/form" options={{ animation: 'slide_from_right' }} />
+            <Stack.Screen name="budget/[id]" options={{ animation: 'slide_from_right', animationDuration: 280 }} />
+            <Stack.Screen name="budget/form" options={{ animation: 'fade_from_bottom', animationDuration: 280 }} />
+            <Stack.Screen name="goal/[id]" options={{ animation: 'slide_from_right', animationDuration: 280 }} />
+            <Stack.Screen name="goal/form" options={{ animation: 'fade_from_bottom', animationDuration: 280 }} />
+            <Stack.Screen name="transaction/[id]" options={{ animation: 'slide_from_right', animationDuration: 280 }} />
+            <Stack.Screen name="transaction/form" options={{ animation: 'fade_from_bottom', animationDuration: 280 }} />
+            <Stack.Screen name="wallet/[id]" options={{ animation: 'slide_from_right', animationDuration: 280 }} />
+            <Stack.Screen name="wallet/form" options={{ animation: 'fade_from_bottom', animationDuration: 280 }} />
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
           </Stack>
           {!splashFinished ? (

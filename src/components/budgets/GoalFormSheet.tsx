@@ -1,4 +1,6 @@
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
+import { FocusTextInput } from '@/components/ui/FocusTextInput';
 import { useToast } from '@/components/ui/ToastProvider';
 import { formatIDR } from '@/lib/format';
 import { calculateGoalRecommendation, formatCompactIDR } from '@/lib/goalCalculator';
@@ -193,7 +195,7 @@ export function GoalFormSheet({
       </View>
 
       {sourceType === 'WALLET' ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <HorizontalScrollStrip fadeColor="#FFFFFF">
           <View style={styles.walletChipRow}>
             {activeWallets.map((w) => {
               const selected = w.id === sourceWalletId;
@@ -219,7 +221,7 @@ export function GoalFormSheet({
               );
             })}
           </View>
-        </ScrollView>
+        </HorizontalScrollStrip>
       ) : (
         <View style={styles.infoBox}>
           <Info size={15} color={Colors.primary} strokeWidth={2.1} />
@@ -235,7 +237,8 @@ export function GoalFormSheet({
         ]}
       >
         <Text style={styles.rpPrefix}>Rp</Text>
-        <TextInput
+        <FocusTextInput
+          showFocusBorder={false}
           style={[styles.amountInput, Typography.tabularNums]}
           placeholder="0"
           placeholderTextColor="#94A3B8"

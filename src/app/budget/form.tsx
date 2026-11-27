@@ -1,6 +1,8 @@
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog';
 import { useToast } from '@/components/ui/ToastProvider';
 import { useFinance, type ManagedCategory } from '@/context/FinanceContext';
+import { useKeyboardFocusScroll } from '@/hooks/useKeyboardFocusScroll';
 import { formatIDR } from '@/lib/format';
 import { type BudgetPeriod } from '@/lib/mockData';
 import { budgetService, type BackendBudget } from '@/services/budget.service';
@@ -45,9 +47,9 @@ const PERIOD_OPTIONS: Array<{ key: BudgetPeriod; label: string }> = [
 ];
 
 const QUICK_AMOUNTS_BY_PERIOD: Record<BudgetPeriod, number[]> = {
-  DAILY: [50_000, 100_000, 150_000],
-  WEEKLY: [250_000, 500_000, 1_000_000],
-  MONTHLY: [500_000, 1_000_000, 2_000_000],
+  DAILY: [25_000, 50_000, 100_000, 150_000],
+  WEEKLY: [150_000, 250_000, 500_000, 1_000_000],
+  MONTHLY: [500_000, 1_000_000, 2_000_000, 3_000_000],
 };
 
 const THRESHOLD_OPTIONS = [70, 80, 90];
@@ -103,11 +105,16 @@ export default function BudgetFormScreen() {
   const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { budgets, categories, setCategories, refreshAllData } = useFinance();
+  const { scrollViewRef, keyboardHeight, scrollToInput, onScroll } =
+    useKeyboardFocusScroll({ stickyBottomHeight: 78 + insets.bottom });
 
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [nameFocused, setNameFocused] = useState(false);
+  const [limitFocused, setLimitFocused] = useState(false);
 
+  const [nameText, setNameText] = useState('');
   const [limitText, setLimitText] = useState('');
   const [period, setPeriod] = useState<BudgetPeriod>('MONTHLY');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
@@ -161,6 +168,7 @@ export default function BudgetFormScreen() {
         const res = await budgetService.getBudgets();
         const found: BackendBudget | undefined = res.items.find((b) => b.id === id);
         if (active && found) {
+          setNameText(found.name ?? '');
           setLimitText(formatThousands(String(Math.round(Number(found.limitAmount)))));
           setPeriod(found.period ?? 'MONTHLY');
           setSelectedCategoryId(found.categoryId);
@@ -177,13 +185,15 @@ export default function BudgetFormScreen() {
 
       const localFound = budgets.find((b) => b.id === id);
       if (active && localFound) {
+        setNameText(localFound.customName ?? '');
         setLimitText(formatThousands(String(Math.round(localFound.limit))));
         setPeriod(localFound.period ?? 'MONTHLY');
+        const catLabel = localFound.categoryName ?? localFound.name;
         const matched = currentCategories.find(
-          (c) => c.label.toLowerCase() === localFound.name.toLowerCase()
+          (c) => c.label.toLowerCase() === catLabel.toLowerCase()
         );
         setSelectedCategoryId(matched?.id ?? '');
-        setSelectedCategoryName(localFound.name);
+        setSelectedCategoryName(catLabel);
         setThresholdPct(localFound.alertThresholdPct ?? 80);
       }
       if (active) setLoading(false);
@@ -211,7 +221,9 @@ export default function BudgetFormScreen() {
 
     if (!isEdit) {
       const duplicate = budgets.find(
-        (b) => b.name.toLowerCase() === selectedCategoryName.trim().toLowerCase()
+        (b) =>
+          (b.categoryName ?? b.name).toLowerCase() ===
+          selectedCategoryName.trim().toLowerCase()
       );
       if (duplicate) {
         showToast(
@@ -225,6 +237,7 @@ export default function BudgetFormScreen() {
     setSubmitting(true);
     try {
       await budgetService.upsertBudget({
+        name: nameText.trim() || null,
         ...(selectedCategoryId ? { categoryId: selectedCategoryId } : {}),
         ...(!selectedCategoryId && selectedCategoryName
           ? { categoryName: selectedCategoryName.trim() }
@@ -275,9 +288,14 @@ export default function BudgetFormScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
+          ref={scrollViewRef}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 110 + insets.bottom }}
+          scrollEventThrottle={16}
+          onScroll={onScroll}
+          contentContainerStyle={{
+            paddingBottom: 110 + insets.bottom,
+          }}
         >
           <LinearGradient
             colors={['#4B89FF', '#3B7AF5', '#2563EB']}
@@ -320,8 +338,78 @@ export default function BudgetFormScreen() {
             </View>
           ) : (
             <>
-              {/* OVERLAPPING CARD: INPUT NOMINAL */}
+              {/* KARTU PREVIEW ANGGARAN LIVE */}
               <View style={styles.heroCard}>
+                <View style={styles.previewTopRow}>
+                  <View style={styles.previewLeft}>
+                    <View style={styles.previewIconBox}>
+                      {renderCategoryIcon(
+                        expenseCategories.find((c) => c.id === selectedCategoryId)?.iconKey ?? 'tag',
+                        Colors.primary
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.previewTitle} numberOfLines={1}>
+                        {nameText.trim() || selectedCategoryName || 'Anggaran Baru'}
+                      </Text>
+                      {nameText.trim() && selectedCategoryName ? (
+                        <Text style={styles.previewCategorySub} numberOfLines={1}>
+                          {selectedCategoryName}
+                        </Text>
+                      ) : (
+                        <Text style={styles.previewCategorySub} numberOfLines={1}>
+                          Preview Anggaran
+                        </Text>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.previewPeriodBadge}>
+                    <Text style={styles.previewPeriodText}>
+                      {period === 'DAILY' ? 'Harian' : period === 'WEEKLY' ? 'Mingguan' : 'Bulanan'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.previewBottomRow}>
+                  <Text style={styles.previewLimitLabel}>Batas Anggaran</Text>
+                  <Text style={[styles.previewLimitValue, Typography.tabularNums]}>
+                    {numericLimit > 0 ? formatIDR(numericLimit) : 'Rp 0'}
+                  </Text>
+                </View>
+                <View style={styles.previewTrack}>
+                  <View style={styles.previewFill} />
+                </View>
+              </View>
+
+              {/* INPUT NAMA ANGGARAN */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Nama Anggaran</Text>
+                <TextInput
+                  style={[
+                    styles.textInputBox,
+                    nameFocused && { borderColor: '#2563EB' },
+                  ]}
+                  placeholder="Contoh: Makan Siang Kantor"
+                  placeholderTextColor="#94A3B8"
+                  maxLength={50}
+                  value={nameText}
+                  onFocus={(e) => {
+                    setNameFocused(true);
+                    scrollToInput(e);
+                  }}
+                  onBlur={() => setNameFocused(false)}
+                  onChangeText={setNameText}
+                />
+                {selectedCategoryName && !nameText.trim() ? (
+                  <Text style={styles.helperText}>
+                    Kosongkan untuk memakai nama kategori
+                  </Text>
+                ) : null}
+              </View>
+
+              {/* INPUT NOMINAL BATAS ANGGARAN */}
+              <View style={styles.card}>
                 <Text style={styles.sectionCaption}>
                   {period === 'DAILY'
                     ? 'BATAS PENGELUARAN HARIAN'
@@ -330,7 +418,12 @@ export default function BudgetFormScreen() {
                       : 'BATAS PENGELUARAN BULANAN'}
                 </Text>
 
-                <View style={styles.amountInputRow}>
+                <View
+                  style={[
+                    styles.amountInputRow,
+                    limitFocused && { borderColor: '#2563EB' },
+                  ]}
+                >
                   <Text style={styles.rpPrefix}>Rp</Text>
                   <TextInput
                     style={[styles.amountInput, Typography.tabularNums]}
@@ -338,11 +431,20 @@ export default function BudgetFormScreen() {
                     placeholderTextColor="#94A3B8"
                     keyboardType="numeric"
                     value={limitText}
+                    onFocus={(e) => {
+                      setLimitFocused(true);
+                      scrollToInput(e);
+                    }}
+                    onBlur={() => setLimitFocused(false)}
                     onChangeText={(val) => setLimitText(formatThousands(val))}
                   />
                 </View>
 
-                <View style={styles.quickChipRow}>
+                <HorizontalScrollStrip
+                  fadeColor="#FFFFFF"
+                  containerStyle={{ marginTop: 12 }}
+                  contentContainerStyle={styles.quickChipRow}
+                >
                   {quickAmounts.map((amt) => {
                     const selected = numericLimit === amt;
                     return (
@@ -367,7 +469,7 @@ export default function BudgetFormScreen() {
                       </Pressable>
                     );
                   })}
-                </View>
+                </HorizontalScrollStrip>
               </View>
 
               {/* PERIODE ANGGARAN */}
@@ -523,7 +625,7 @@ export default function BudgetFormScreen() {
       <ConfirmDialog
         visible={confirmDeleteOpen}
         title="Hapus Anggaran?"
-        message={`Anggaran "${selectedCategoryName || 'ini'}" akan dihapus. Riwayat transaksi tetap aman.`}
+        message={`Anggaran "${nameText.trim() || selectedCategoryName || 'ini'}" akan dihapus. Riwayat transaksi tetap aman.`}
         confirmLabel="Hapus"
         variant="danger"
         onCancel={() => setConfirmDeleteOpen(false)}
@@ -601,6 +703,88 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 3,
   },
+  previewTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  previewLeft: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  previewIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#EBF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewTitle: {
+    fontFamily: FontFamily.bold,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  previewCategorySub: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 1,
+  },
+  previewPeriodBadge: {
+    backgroundColor: '#EBF2FF',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  previewPeriodText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11.5,
+    color: '#2563EB',
+  },
+  previewBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+  },
+  previewLimitLabel: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  previewLimitValue: {
+    fontFamily: FontFamily.bold,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  previewTrack: {
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: '#EEF2F7',
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  previewFill: {
+    width: '0%',
+    height: '100%',
+    backgroundColor: '#2563EB',
+  },
+  textInputBox: {
+    height: 48,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    fontFamily: FontFamily.medium,
+    fontSize: 14,
+    color: Colors.textPrimary,
+  },
   sectionCaption: {
     fontFamily: FontFamily.semibold,
     fontSize: 11,
@@ -633,14 +817,14 @@ const styles = StyleSheet.create({
   },
   quickChipRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 12,
+    paddingRight: 8,
   },
   quickChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: Radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
     backgroundColor: '#F5F7FB',
     borderWidth: 1,
     borderColor: '#E2E8F0',

@@ -5,6 +5,7 @@ export type BudgetPeriod = 'DAILY' | 'WEEKLY' | 'MONTHLY';
 export interface BackendBudget {
   id: string;
   userId: string;
+  name?: string | null;
   categoryId: string;
   category: {
     id: string;
@@ -68,6 +69,7 @@ export const budgetService = {
   },
 
   upsertBudget(payload: {
+    name?: string | null;
     categoryId?: string | null;
     categoryName?: string;
     month: number;
@@ -79,6 +81,7 @@ export const budgetService = {
     return apiRequest<BackendBudget>('/budgets', {
       method: 'POST',
       body: {
+        ...(payload.name !== undefined ? { name: payload.name } : {}),
         ...(payload.categoryId ? { categoryId: payload.categoryId } : {}),
         ...(payload.categoryName ? { categoryName: payload.categoryName } : {}),
         month: payload.month,

@@ -1,3 +1,4 @@
+import { HorizontalScrollStrip } from '@/components/HorizontalScrollStrip';
 import { BaseBottomSheet } from '@/components/ui/BaseBottomSheet';
 import { formatIDR } from '@/lib/format';
 import { type WalletItem } from '@/lib/mockData';
@@ -51,10 +52,9 @@ export function DeleteGoalSheet({
 
       {activeWallets.length > 0 ? (
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>Pilih dompet pengembalian</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
+          <HorizontalScrollStrip
+            label="Pilih dompet pengembalian"
+            fadeColor="#FFFFFF"
             contentContainerStyle={styles.walletScroll}
           >
             {activeWallets.map((w) => {
@@ -89,7 +89,7 @@ export function DeleteGoalSheet({
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </HorizontalScrollStrip>
 
           <Pressable
             disabled={!selectedWalletId}

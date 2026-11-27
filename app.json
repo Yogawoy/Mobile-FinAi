@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "com.finai.mobile",
+      "softwareKeyboardLayoutMode": "resize",
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",

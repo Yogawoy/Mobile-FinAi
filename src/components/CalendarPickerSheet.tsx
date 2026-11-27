@@ -31,9 +31,11 @@ interface CalendarPickerSheetProps {
   visible: boolean;
   initialDate?: Date | null;
   accentColor?: string;
+  allowPastDates?: boolean;
+  allowFutureDates?: boolean;
   onClose: () => void;
   onSelect: (date: Date) => void;
-  onClear: () => void;
+  onClear?: () => void;
 }
 
 function startOfLocalDay(d: Date): Date {
@@ -56,6 +58,8 @@ export function CalendarPickerSheet({
   visible,
   initialDate,
   accentColor = '#2563EB',
+  allowPastDates = false,
+  allowFutureDates = true,
   onClose,
   onSelect,
   onClear,
@@ -113,16 +117,22 @@ export function CalendarPickerSheet({
       initialDate &&
       !Number.isNaN(initialDate.getTime()) &&
       initialDate.getFullYear() < 2090 &&
-      startOfLocalDay(initialDate) >= today
+      (allowPastDates || startOfLocalDay(initialDate) >= today) &&
+      (allowFutureDates || startOfLocalDay(initialDate) <= today)
         ? startOfLocalDay(initialDate)
         : today;
 
     setSelectedDate(validInitial);
     setViewYear(validInitial.getFullYear());
     setViewMonth(validInitial.getMonth());
-  }, [visible, initialDate, today, currentYear, currentMonth, slideX, stageOpacity]);
+  }, [visible, initialDate, today, allowPastDates, allowFutureDates, slideX, stageOpacity]);
 
-  const isAtMinMonth = viewYear === currentYear && viewMonth <= currentMonth;
+  const isAtMinMonth = allowPastDates
+    ? viewYear <= currentYear - 5 && viewMonth === 0
+    : viewYear === currentYear && viewMonth <= currentMonth;
+  const isAtMaxMonth = !allowFutureDates
+    ? viewYear === currentYear && viewMonth >= currentMonth
+    : viewYear >= currentYear + 10 && viewMonth === 11;
 
   const handlePrevMonth = () => {
     if (isAtMinMonth) return;
@@ -136,7 +146,7 @@ export function CalendarPickerSheet({
   };
 
   const handleNextMonth = () => {
-    if (viewYear >= currentYear + 10 && viewMonth === 11) return;
+    if (isAtMaxMonth) return;
     if (viewMonth === 11) {
       setViewYear((y) => y + 1);
       setViewMonth(0);
@@ -153,7 +163,10 @@ export function CalendarPickerSheet({
 
   const handlePickYear = (year: number) => {
     setViewYear(year);
-    if (year === currentYear && viewMonth < currentMonth) {
+    if (!allowPastDates && year === currentYear && viewMonth < currentMonth) {
+      setViewMonth(currentMonth);
+    }
+    if (!allowFutureDates && year === currentYear && viewMonth > currentMonth) {
       setViewMonth(currentMonth);
     }
     setYearPickerOpen(false);
@@ -177,16 +190,20 @@ export function CalendarPickerSheet({
     return cells;
   }, [viewYear, viewMonth]);
 
-  const yearOptions = useMemo(
-    () => Array.from({ length: 11 }, (_, idx) => currentYear + idx),
-    [currentYear]
-  );
+  const yearOptions = useMemo(() => {
+    if (allowPastDates && !allowFutureDates) {
+      return Array.from({ length: 6 }, (_, idx) => currentYear - 5 + idx);
+    }
+    if (allowPastDates && allowFutureDates) {
+      return Array.from({ length: 11 }, (_, idx) => currentYear - 5 + idx);
+    }
+    return Array.from({ length: 11 }, (_, idx) => currentYear + idx);
+  }, [currentYear, allowPastDates, allowFutureDates]);
 
-  const daysRemaining = useMemo(() => {
+  const daysDiff = useMemo(() => {
     const msPerDay = 24 * 60 * 60 * 1000;
-    return Math.max(
-      0,
-      Math.round((startOfLocalDay(selectedDate).getTime() - today.getTime()) / msPerDay)
+    return Math.round(
+      (startOfLocalDay(selectedDate).getTime() - today.getTime()) / msPerDay
     );
   }, [selectedDate, today]);
 
@@ -205,22 +222,28 @@ export function CalendarPickerSheet({
               </Text>
             </View>
             <Text style={[styles.previewDaysText, Typography.tabularNums, { color: accentColor }]}>
-              {daysRemaining === 0 ? 'Hari ini' : `${daysRemaining} hari lagi`}
+              {daysDiff === 0
+                ? 'Hari ini'
+                : daysDiff > 0
+                  ? `${daysDiff} hari lagi`
+                  : `${Math.abs(daysDiff)} hari lalu`}
             </Text>
           </View>
 
           <View style={styles.footerBtnRow}>
-            <Pressable
-              onPress={() => {
-                onClear();
-                onClose();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Tanpa Batas"
-              style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.78 }]}
-            >
-              <Text style={styles.clearBtnText}>Tanpa Batas</Text>
-            </Pressable>
+            {onClear ? (
+              <Pressable
+                onPress={() => {
+                  onClear();
+                  onClose();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Tanpa Batas"
+                style={({ pressed }) => [styles.clearBtn, pressed && { opacity: 0.78 }]}
+              >
+                <Text style={styles.clearBtnText}>Tanpa Batas</Text>
+              </Pressable>
+            ) : null}
 
             <Pressable
               onPress={() => {
@@ -272,13 +295,13 @@ export function CalendarPickerSheet({
         </Pressable>
 
         <Pressable
-          disabled={yearPickerOpen}
+          disabled={yearPickerOpen || isAtMaxMonth}
           onPress={handleNextMonth}
           accessibilityRole="button"
           accessibilityLabel="Bulan berikutnya"
           style={({ pressed }) => [
             styles.navArrowBtn,
-            yearPickerOpen && { opacity: 0.3 },
+            (yearPickerOpen || isAtMaxMonth) && { opacity: 0.3 },
             pressed && { opacity: 0.65, transform: [{ scale: 0.92 }] },
           ]}
         >
@@ -337,7 +360,9 @@ export function CalendarPickerSheet({
                 }
 
                 const cellDate = new Date(viewYear, viewMonth, day);
-                const isPast = cellDate < today;
+                const isDisabled =
+                  (!allowPastDates && cellDate < today) ||
+                  (!allowFutureDates && cellDate > today);
                 const isToday =
                   day === today.getDate() &&
                   viewMonth === today.getMonth() &&
@@ -350,7 +375,7 @@ export function CalendarPickerSheet({
                 return (
                   <View key={`cell-${index}`} style={styles.dayCellWrap}>
                     <Pressable
-                      disabled={isPast}
+                      disabled={isDisabled}
                       onPress={() => setSelectedDate(cellDate)}
                       accessibilityRole="button"
                       accessibilityLabel={`${day} ${FULL_MONTHS[viewMonth]} ${viewYear}`}
@@ -358,14 +383,14 @@ export function CalendarPickerSheet({
                         styles.dayCircle,
                         isToday && !isSelected && styles.todayCircle,
                         isSelected && { backgroundColor: accentColor },
-                        pressed && !isPast && { transform: [{ scale: 0.9 }], opacity: 0.78 },
+                        pressed && !isDisabled && { transform: [{ scale: 0.9 }], opacity: 0.78 },
                       ]}
                     >
                       <Text
                         style={[
                           styles.dayText,
                           Typography.tabularNums,
-                          isPast && styles.dayTextPast,
+                          isDisabled && styles.dayTextPast,
                           isToday && !isSelected && { color: '#3B7AF5', fontFamily: FontFamily.bold },
                           isSelected && styles.dayTextSelected,
                         ]}

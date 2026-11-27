@@ -12,7 +12,10 @@ import {
   type WalletItem,
 } from '@/lib/mockData';
 
-import { type AiTransactionCardData } from '@/services/ai.service';
+import {
+  type AiTransactionCardData,
+  type ChatStructuredCard,
+} from '@/services/ai.service';
 
 export type ChatRichCardType =
   | 'SUMMARY'
@@ -39,6 +42,7 @@ export interface ChatMessage {
   timestamp: string;
   richCard?: ChatRichCardType;
   cardData?: AiTransactionCardData | null;
+  card?: ChatStructuredCard | null;
   actionStatus?: 'PENDING' | 'CONFIRMED' | 'CANCELLED';
 }
 
