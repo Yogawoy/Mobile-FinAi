@@ -1,5 +1,6 @@
 import { CategoryType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
+import { pickCategoryIcon } from '../../constants/categoryIcons';
 import { logAudit } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
 import type { CreateCategoryInput, UpdateCategoryInput } from './categories.schema';
@@ -36,23 +37,34 @@ export async function createCategory(
   input: CreateCategoryInput,
   ipAddress?: string | null
 ) {
+  const cleanName = input.name.trim();
   const duplicate = await prisma.category.findFirst({
     where: {
       userId,
       type: input.type,
-      name: { equals: input.name, mode: 'insensitive' },
+      name: { equals: cleanName, mode: 'insensitive' },
     },
   });
   if (duplicate) {
-    throw new AppError('Kategori dengan nama dan tipe tersebut sudah ada', 409);
+    throw new AppError(`Kategori ${cleanName} sudah ada`, 409);
   }
+
+  const existingIcons = await prisma.category.findMany({
+    where: { userId, type: input.type },
+    select: { icon: true },
+  });
+  const usedIcons = existingIcons.map((c) => c.icon);
+  const chosenIcon =
+    input.icon && input.icon.toLowerCase() !== 'tag'
+      ? input.icon
+      : pickCategoryIcon(cleanName, undefined, usedIcons);
 
   const created = await prisma.category.create({
     data: {
       userId,
-      name: input.name,
+      name: cleanName,
       type: input.type,
-      icon: input.icon,
+      icon: chosenIcon,
       color: input.color,
       isDefault: false,
     },
@@ -85,17 +97,18 @@ export async function updateCategory(
     throw new AppError('Kategori tidak ditemukan', 404);
   }
 
-  if (input.name && input.name.toLowerCase() !== existing.name.toLowerCase()) {
+  if (input.name && input.name.trim().toLowerCase() !== existing.name.toLowerCase()) {
+    const cleanName = input.name.trim();
     const duplicate = await prisma.category.findFirst({
       where: {
         userId,
         type: existing.type,
-        name: { equals: input.name, mode: 'insensitive' },
+        name: { equals: cleanName, mode: 'insensitive' },
         id: { not: categoryId },
       },
     });
     if (duplicate) {
-      throw new AppError('Nama kategori tersebut sudah digunakan', 409);
+      throw new AppError(`Kategori ${cleanName} sudah ada`, 409);
     }
   }
 

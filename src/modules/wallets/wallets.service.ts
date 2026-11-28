@@ -1,6 +1,6 @@
 import type { Wallet } from '@prisma/client';
 import { prisma } from '../../config/prisma';
-import { logAudit } from '../../utils/audit';
+import { logAuditBackground } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
 import type { CreateWalletInput, UpdateWalletInput } from './wallets.schema';
 
@@ -74,7 +74,7 @@ export async function createWallet(
     },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'WALLET_CREATE',
     entityType: 'WALLET',
@@ -116,7 +116,7 @@ export async function updateWallet(
     },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'WALLET_UPDATE',
     entityType: 'WALLET',
@@ -132,19 +132,21 @@ export async function deleteOrArchiveWallet(
   walletId: string,
   ipAddress?: string | null
 ) {
-  const existing = await prisma.wallet.findFirst({
-    where: { id: walletId, userId },
-  });
+  const [existing, txCount] = await Promise.all([
+    prisma.wallet.findFirst({
+      where: { id: walletId, userId },
+      select: { id: true },
+    }),
+    prisma.transaction.count({
+      where: {
+        userId,
+        OR: [{ walletId }, { destinationWalletId: walletId }],
+      },
+    }),
+  ]);
   if (!existing) {
     throw new AppError('Dompet tidak ditemukan', 404);
   }
-
-  const txCount = await prisma.transaction.count({
-    where: {
-      userId,
-      OR: [{ walletId }, { destinationWalletId: walletId }],
-    },
-  });
 
   if (txCount > 0) {
     const archived = await prisma.wallet.update({
@@ -152,7 +154,7 @@ export async function deleteOrArchiveWallet(
       data: { isArchived: true },
     });
 
-    await logAudit({
+    logAuditBackground({
       userId,
       action: 'WALLET_ARCHIVE',
       entityType: 'WALLET',
@@ -172,7 +174,7 @@ export async function deleteOrArchiveWallet(
     where: { id: walletId },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'WALLET_DELETE',
     entityType: 'WALLET',

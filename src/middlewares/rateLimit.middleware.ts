@@ -1,5 +1,16 @@
 import rateLimit from 'express-rate-limit';
 
+export const apiRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 menit
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Terlalu banyak permintaan ke server. Silakan coba lagi sebentar.',
+  },
+});
+
 export const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 menit
   max: 20,

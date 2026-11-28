@@ -29,3 +29,15 @@ export async function logAudit(input: LogAuditInput): Promise<void> {
     console.warn('Gagal mencatat audit log:', err);
   }
 }
+
+export function runInBackground(label: string, task: () => Promise<unknown>): void {
+  setImmediate(() => {
+    void task().catch((err) => {
+      console.warn(`[BG:${label}]`, err);
+    });
+  });
+}
+
+export function logAuditBackground(input: LogAuditInput): void {
+  runInBackground(`audit:${input.action}`, () => logAudit(input));
+}

@@ -4,6 +4,7 @@ import { authRateLimiter } from '../../middlewares/rateLimit.middleware';
 import { validate } from '../../middlewares/validate.middleware';
 import {
   getMeHandler,
+  googleLoginHandler,
   loginHandler,
   logoutHandler,
   refreshHandler,
@@ -12,6 +13,7 @@ import {
   updateMeHandler,
 } from './auth.controller';
 import {
+  googleLoginSchema,
   loginSchema,
   logoutSchema,
   refreshSchema,
@@ -34,6 +36,13 @@ authRouter.post(
   authRateLimiter,
   validate({ body: loginSchema }),
   loginHandler
+);
+
+authRouter.post(
+  '/google',
+  authRateLimiter,
+  validate({ body: googleLoginSchema }),
+  googleLoginHandler
 );
 
 authRouter.post(

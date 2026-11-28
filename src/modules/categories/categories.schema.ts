@@ -4,7 +4,7 @@ import { z } from 'zod';
 export const createCategorySchema = z.object({
   name: z.string().trim().min(1, 'Nama kategori wajib diisi').max(60),
   type: z.nativeEnum(CategoryType),
-  icon: z.string().trim().min(1).max(40).default('tag'),
+  icon: z.string().trim().min(1).max(40).optional(),
   color: z.string().trim().min(3).max(20).default('#3B7AF5'),
 });
 

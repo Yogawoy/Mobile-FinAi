@@ -10,6 +10,7 @@ import {
   clearPendingDraft,
   detectIncompleteDraftIntent,
   evaluateDraftMissingSlots,
+  getGenericItemPrompt,
   getPendingDraft,
   isCancelDraftCommand,
   isFreshCheckQuery,
@@ -23,6 +24,7 @@ import {
   createCategoryAndBudgetAtomic,
   createCategoryAndTransactionAtomic,
   ensureOtherCategory,
+  findExistingCategoryByCoreToken,
   findExplicitCategoryInText,
   findFallbackOtherCategory,
   findHistoricalCategoryMatch,
@@ -1276,6 +1278,30 @@ async function chatWithFinAiInner(params: {
     draft: PendingDraft,
     missingKey: string
   ): ChatResponsePayload {
+    if (draft.intent === 'CREATE_TRANSACTION' && missingKey === 'description') {
+      const { question, label } = getGenericItemPrompt(draft.data.description);
+      const walletObj = wallets.find((w) => w.id === draft.data.walletId);
+      const txWord = draft.data.type === 'INCOME' ? 'pemasukan' : 'pengeluaran';
+      return {
+        reply: question,
+        intent: 'CREATE_TRANSACTION',
+        actionExecuted: false,
+        pendingConfirmation: false,
+        cardType: null,
+        cardData: null,
+        card: {
+          type: 'CHOICE_CARD',
+          title: 'Pilih atau tulis nama item',
+          options: [
+            {
+              label: `Catat sebagai ${label} saja`,
+              messageToSend: `Konfirmasi catat ${txWord} ${draft.data.amount} deskripsi persis ${label} pakai ${walletObj?.name ?? 'Dompet'}`,
+            },
+          ],
+        },
+      };
+    }
+
     if (
       (draft.intent === 'CREATE_TRANSACTION' || draft.intent === 'GOAL_CONTRIBUTE') &&
       missingKey === 'walletId'
@@ -3315,8 +3341,13 @@ async function chatWithFinAiInner(params: {
           `${message} ${parsedAction.note}`,
           targetCatType
         );
+      const coreTokenExisting = rawSuggested
+        ? findExistingCategoryByCoreToken(categories, rawSuggested, targetCatType)
+        : null;
       const suggestedName =
-        rawSuggested && !isCategoryAlreadyOwned(categories, rawSuggested, targetCatType)
+        rawSuggested &&
+        !coreTokenExisting &&
+        !isCategoryAlreadyOwned(categories, rawSuggested, targetCatType)
           ? toTitleCaseCategoryName(rawSuggested)
           : null;
 

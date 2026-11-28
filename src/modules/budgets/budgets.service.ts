@@ -8,7 +8,7 @@ import {
   getWibNow,
   toMonthlyEquivalent,
 } from '../../utils/budgetWindow';
-import { logAudit } from '../../utils/audit';
+import { logAuditBackground } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
 import type { UpdateBudgetInput, UpsertBudgetInput } from './budgets.schema';
 
@@ -183,13 +183,26 @@ export async function getBudgetsWithSummary(
   periodFilter?: BudgetPeriod
 ) {
   const daysInMonth = getDaysInMonth(month, year);
-  const items = await listBudgets(userId, month, year, periodFilter);
-
   const { start: monthStart, end: monthEnd } = getMonthDateRangeWib(month, year);
-  const allMonthBudgets = await prisma.budget.findMany({
-    where: { userId, month, year },
-    select: { categoryId: true, period: true, limitAmount: true, resetAt: true },
-  });
+
+  const [items, rawAllMonthBudgets] = await Promise.all([
+    listBudgets(userId, month, year, periodFilter),
+    periodFilter
+      ? prisma.budget.findMany({
+          where: { userId, month, year },
+          select: { categoryId: true, period: true, limitAmount: true, resetAt: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const allMonthBudgets =
+    rawAllMonthBudgets ??
+    items.map((b) => ({
+      categoryId: b.categoryId,
+      period: b.period,
+      limitAmount: b.limitAmount,
+      resetAt: null as Date | null,
+    }));
 
   let totalMonthlySpent = 0;
   if (allMonthBudgets.length > 0) {
@@ -328,7 +341,7 @@ export async function upsertBudget(
     include: { category: true },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'BUDGET_UPSERT',
     entityType: 'BUDGET',
@@ -453,7 +466,7 @@ export async function updateBudget(
     include: { category: true },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'BUDGET_UPDATE',
     entityType: 'BUDGET',
@@ -488,7 +501,7 @@ export async function deleteBudget(
 
   await prisma.budget.delete({ where: { id: budgetId } });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'BUDGET_DELETE',
     entityType: 'BUDGET',
@@ -519,7 +532,7 @@ export async function resetBudget(
     include: { category: true },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'BUDGET_RESET',
     entityType: 'BUDGET',

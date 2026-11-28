@@ -1,6 +1,7 @@
-import { CategoryType, WalletType, type User } from '@prisma/client';
+import { CategoryType, type Prisma, WalletType, type User } from '@prisma/client';
+import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '../../config/prisma';
-import { logAudit } from '../../utils/audit';
+import { logAudit, logAuditBackground } from '../../utils/audit';
 import { AppError } from '../../utils/errors';
 import { comparePassword, hashPassword, sha256Hash } from '../../utils/hash';
 import {
@@ -23,16 +24,44 @@ const DEFAULT_CATEGORIES: Array<{
   icon: string;
   color: string;
 }> = [
-    { name: 'Makanan & Minuman', type: CategoryType.EXPENSE, icon: 'utensils', color: '#3B7AF5' },
-    { name: 'Transportasi', type: CategoryType.EXPENSE, icon: 'car', color: '#F59E0B' },
-    { name: 'Belanja', type: CategoryType.EXPENSE, icon: 'shopping', color: '#0D9488' },
-    { name: 'Tagihan & Utilitas', type: CategoryType.EXPENSE, icon: 'zap', color: '#EF4444' },
-    { name: 'Ngopi & Hiburan', type: CategoryType.EXPENSE, icon: 'coffee', color: '#64748B' },
-    { name: 'Kesehatan', type: CategoryType.EXPENSE, icon: 'heart', color: '#EC4899' },
-    { name: 'Gaji / Proyek', type: CategoryType.INCOME, icon: 'briefcase', color: '#10B981' },
-    { name: 'Bonus & Hadiah', type: CategoryType.INCOME, icon: 'gift', color: '#3B7AF5' },
-    { name: 'Investasi & Dividen', type: CategoryType.INCOME, icon: 'trending-up', color: '#059669' },
+    { name: 'Makanan & Minuman', type: CategoryType.EXPENSE, icon: 'Utensils', color: '#3B7AF5' },
+    { name: 'Transportasi', type: CategoryType.EXPENSE, icon: 'Car', color: '#F59E0B' },
+    { name: 'Belanja', type: CategoryType.EXPENSE, icon: 'ShoppingBag', color: '#0D9488' },
+    { name: 'Tagihan & Utilitas', type: CategoryType.EXPENSE, icon: 'Zap', color: '#EF4444' },
+    { name: 'Ngopi & Hiburan', type: CategoryType.EXPENSE, icon: 'Coffee', color: '#64748B' },
+    { name: 'Kesehatan', type: CategoryType.EXPENSE, icon: 'HeartPulse', color: '#EC4899' },
+    { name: 'Gaji / Proyek', type: CategoryType.INCOME, icon: 'Briefcase', color: '#10B981' },
+    { name: 'Bonus & Hadiah', type: CategoryType.INCOME, icon: 'Gift', color: '#3B7AF5' },
+    { name: 'Investasi & Dividen', type: CategoryType.INCOME, icon: 'TrendingUp', color: '#059669' },
   ];
+
+async function seedDefaultWalletAndCategories(
+  tx: Prisma.TransactionClient,
+  userId: string
+) {
+  await Promise.all([
+    tx.wallet.create({
+      data: {
+        userId,
+        name: 'Uang Tunai',
+        type: WalletType.CASH,
+        initialBalance: 0,
+        currentBalance: 0,
+        color: '#10B981',
+      },
+    }),
+    tx.category.createMany({
+      data: DEFAULT_CATEGORIES.map((cat) => ({
+        userId,
+        name: cat.name,
+        type: cat.type,
+        icon: cat.icon,
+        color: cat.color,
+        isDefault: true,
+      })),
+    }),
+  ]);
+}
 
 export interface RequestMeta {
   ipAddress?: string | null;
@@ -44,6 +73,7 @@ export function sanitizeUser(user: User) {
     id: user.id,
     name: user.name,
     email: user.email,
+    avatarUrl: user.avatarUrl ?? null,
     currency: user.currency,
     monthlyIncomeTarget: user.monthlyIncomeTarget
       ? Number(user.monthlyIncomeTarget)
@@ -100,27 +130,7 @@ export async function registerUser(input: RegisterInput, meta: RequestMeta) {
       },
     });
 
-    await tx.wallet.create({
-      data: {
-        userId: createdUser.id,
-        name: 'Uang Tunai',
-        type: WalletType.CASH,
-        initialBalance: 0,
-        currentBalance: 0,
-        color: '#10B981',
-      },
-    });
-
-    await tx.category.createMany({
-      data: DEFAULT_CATEGORIES.map((cat) => ({
-        userId: createdUser.id,
-        name: cat.name,
-        type: cat.type,
-        icon: cat.icon,
-        color: cat.color,
-        isDefault: true,
-      })),
-    });
+    await seedDefaultWalletAndCategories(tx, createdUser.id);
 
     return createdUser;
   });
@@ -148,6 +158,12 @@ export async function loginUser(input: LoginInput, meta: RequestMeta) {
   if (!user || !user.isActive) {
     throw new AppError('Email atau password salah', 401);
   }
+  if (!user.passwordHash) {
+    throw new AppError(
+      'Akun ini terdaftar lewat Google. Silakan masuk menggunakan tombol Google.',
+      400
+    );
+  }
 
   const valid = await comparePassword(input.password, user.passwordHash);
   if (!valid) {
@@ -156,9 +172,101 @@ export async function loginUser(input: LoginInput, meta: RequestMeta) {
 
   const tokens = await issueTokensAndSave(user, meta);
 
-  await logAudit({
+  logAuditBackground({
     userId: user.id,
     action: 'AUTH_LOGIN',
+    entityType: 'USER',
+    entityId: user.id,
+    ipAddress: meta.ipAddress,
+  });
+
+  return {
+    ...tokens,
+    user: sanitizeUser(user),
+  };
+}
+
+export async function loginWithGoogle(idToken: string, meta: RequestMeta) {
+  const webClientId = process.env.GOOGLE_WEB_CLIENT_ID?.trim();
+  if (!webClientId) {
+    throw new AppError('GOOGLE_WEB_CLIENT_ID belum dikonfigurasi di server', 500);
+  }
+
+  const client = new OAuth2Client(webClientId);
+  let payload:
+    | {
+        sub?: string;
+        email?: string;
+        email_verified?: boolean;
+        name?: string;
+        picture?: string;
+      }
+    | undefined;
+
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken,
+      audience: webClientId,
+    });
+    payload = ticket.getPayload();
+  } catch {
+    throw new AppError('Token Google tidak valid atau kedaluwarsa', 401);
+  }
+
+  const googleId = payload?.sub?.trim();
+  const email = payload?.email?.trim().toLowerCase();
+  if (!googleId || !email || payload?.email_verified !== true) {
+    throw new AppError(
+      'Akun Google tidak memiliki email terverifikasi',
+      400
+    );
+  }
+
+  const user = await prisma.$transaction(async (tx) => {
+    const existing = await tx.user.findFirst({
+      where: {
+        OR: [{ googleId }, { email }],
+      },
+    });
+
+    if (existing) {
+      if (!existing.isActive) {
+        throw new AppError('Akun Anda sedang dinonaktifkan', 403);
+      }
+      const needsLink = !existing.googleId;
+      const needsAvatar = !existing.avatarUrl && Boolean(payload?.picture);
+      if (needsLink || needsAvatar) {
+        return tx.user.update({
+          where: { id: existing.id },
+          data: {
+            ...(needsLink ? { googleId } : {}),
+            ...(needsAvatar ? { avatarUrl: payload?.picture ?? null } : {}),
+          },
+        });
+      }
+      return existing;
+    }
+
+    const createdUser = await tx.user.create({
+      data: {
+        name: payload?.name?.trim() || email.split('@')[0] || 'Pengguna',
+        email,
+        passwordHash: null,
+        googleId,
+        avatarUrl: payload?.picture ?? null,
+        hasCompletedSetup: false,
+      },
+    });
+
+    await seedDefaultWalletAndCategories(tx, createdUser.id);
+    return createdUser;
+  });
+
+  const tokens = await issueTokensAndSave(user, meta);
+
+  logAuditBackground({
+    userId: user.id,
+    action: 'AUTH_GOOGLE_LOGIN',
     entityType: 'USER',
     entityId: user.id,
     ipAddress: meta.ipAddress,
@@ -286,12 +394,14 @@ export async function updateMe(
   }
 
   if (input.newPassword) {
-    if (!input.currentPassword) {
-      throw new AppError('Password saat ini wajib diisi untuk mengganti password', 400);
-    }
-    const valid = await comparePassword(input.currentPassword, existing.passwordHash);
-    if (!valid) {
-      throw new AppError('Password saat ini tidak sesuai', 400);
+    if (existing.passwordHash) {
+      if (!input.currentPassword) {
+        throw new AppError('Password saat ini wajib diisi untuk mengganti password', 400);
+      }
+      const valid = await comparePassword(input.currentPassword, existing.passwordHash);
+      if (!valid) {
+        throw new AppError('Password saat ini tidak sesuai', 400);
+      }
     }
     updateData.passwordHash = await hashPassword(input.newPassword);
   }

@@ -6,7 +6,7 @@ import {
   TransactionType,
 } from '@prisma/client';
 import { prisma } from '../../config/prisma';
-import { logAudit } from '../../utils/audit';
+import { logAuditBackground, runInBackground } from '../../utils/audit';
 import {
   getBudgetDateRange,
   getBudgetPeriodLabel,
@@ -121,7 +121,6 @@ async function applyBalanceDelta(
 }
 
 async function checkAndCreateBudgetAlert(
-  tx: Prisma.TransactionClient,
   params: {
     userId: string;
     categoryId: string | null;
@@ -135,7 +134,7 @@ async function checkAndCreateBudgetAlert(
   const month = transactionDate.getMonth() + 1;
   const year = transactionDate.getFullYear();
 
-  const budget = await tx.budget.findUnique({
+  const budget = await prisma.budget.findUnique({
     where: {
       userId_categoryId_month_year: {
         userId,
@@ -153,7 +152,7 @@ async function checkAndCreateBudgetAlert(
   const effectiveStart =
     budget.resetAt && budget.resetAt > start ? budget.resetAt : start;
   const periodLabelLower = getBudgetPeriodLabel(budget.period).toLowerCase();
-  const agg = await tx.transaction.aggregate({
+  const agg = await prisma.transaction.aggregate({
     where: {
       userId,
       categoryId,
@@ -178,30 +177,31 @@ async function checkAndCreateBudgetAlert(
     ? `Pengeluaran kategori "${budget.category.name}" ${periodLabelLower} mencapai ${roundedPct}% (melebihi batas Rp ${limitAmount.toLocaleString('id-ID')}).`
     : `Pengeluaran kategori "${budget.category.name}" ${periodLabelLower} sudah mencapai ${roundedPct}% dari batas anggaran.`;
 
-  await tx.spendingAnomaly.create({
-    data: {
-      userId,
-      categoryId,
-      transactionId,
-      month,
-      year,
-      anomalyType: AnomalyType.OVER_BUDGET,
-      severity: isOver ? AnomalySeverity.HIGH : AnomalySeverity.MEDIUM,
-      deviationPct: isOver ? deviationPct : roundedPct,
-      message,
-    },
-  });
-
-  await tx.notification.create({
-    data: {
-      userId,
-      type: NotificationType.BUDGET_ALERT,
-      title: isOver
-        ? `Anggaran ${budget.category.name} Terlampaui`
-        : `Peringatan Anggaran ${budget.category.name}`,
-      body: message,
-    },
-  });
+  await Promise.all([
+    prisma.spendingAnomaly.create({
+      data: {
+        userId,
+        categoryId,
+        transactionId,
+        month,
+        year,
+        anomalyType: AnomalyType.OVER_BUDGET,
+        severity: isOver ? AnomalySeverity.HIGH : AnomalySeverity.MEDIUM,
+        deviationPct: isOver ? deviationPct : roundedPct,
+        message,
+      },
+    }),
+    prisma.notification.create({
+      data: {
+        userId,
+        type: NotificationType.BUDGET_ALERT,
+        title: isOver
+          ? `Anggaran ${budget.category.name} Terlampaui`
+          : `Peringatan Anggaran ${budget.category.name}`,
+        body: message,
+      },
+    }),
+  ]);
 }
 
 export async function listTransactions(
@@ -309,29 +309,33 @@ export async function createTransaction(
   const transactionDate =
     input.transactionDate ?? input.transaction_date ?? new Date();
 
-  const sourceWallet = await prisma.wallet.findFirst({
-    where: { id: walletId, userId },
-  });
+  const [sourceWallet, destWallet, cat] = await Promise.all([
+    prisma.wallet.findFirst({
+      where: { id: walletId, userId },
+      select: { id: true },
+    }),
+    destinationWalletId
+      ? prisma.wallet.findFirst({
+          where: { id: destinationWalletId, userId },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+    categoryId
+      ? prisma.category.findFirst({
+          where: { id: categoryId, userId },
+          select: { id: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
   if (!sourceWallet) {
     throw new AppError('Dompet asal tidak ditemukan', 404);
   }
-
-  if (destinationWalletId) {
-    const destWallet = await prisma.wallet.findFirst({
-      where: { id: destinationWalletId, userId },
-    });
-    if (!destWallet) {
-      throw new AppError('Dompet tujuan tidak ditemukan', 404);
-    }
+  if (destinationWalletId && !destWallet) {
+    throw new AppError('Dompet tujuan tidak ditemukan', 404);
   }
-
-  if (categoryId) {
-    const cat = await prisma.category.findFirst({
-      where: { id: categoryId, userId },
-    });
-    if (!cat) {
-      throw new AppError('Kategori tidak ditemukan', 404);
-    }
+  if (categoryId && !cat) {
+    throw new AppError('Kategori tidak ditemukan', 404);
   }
 
   const created = await prisma.$transaction(async (tx) => {
@@ -375,19 +379,21 @@ export async function createTransaction(
       direction: 1,
     });
 
-    if (input.type === TransactionType.EXPENSE) {
-      await checkAndCreateBudgetAlert(tx, {
-        userId,
-        categoryId,
-        transactionId: record.id,
-        transactionDate,
-      });
-    }
-
     return record;
   });
 
-  await logAudit({
+  if (input.type === TransactionType.EXPENSE && categoryId) {
+    runInBackground('tx:budget-alert', () =>
+      checkAndCreateBudgetAlert({
+        userId,
+        categoryId,
+        transactionId: created.id,
+        transactionDate,
+      })
+    );
+  }
+
+  logAuditBackground({
     userId,
     action: 'TRANSACTION_CREATE',
     entityType: 'TRANSACTION',
@@ -442,6 +448,16 @@ export async function updateTransaction(
         : input.category_id !== undefined
           ? input.category_id
           : existing.categoryId;
+
+  if (nextCategoryId && nextCategoryId !== existing.categoryId) {
+    const ownedCat = await prisma.category.findFirst({
+      where: { id: nextCategoryId, userId },
+      select: { id: true },
+    });
+    if (!ownedCat) {
+      throw new AppError('Kategori tidak ditemukan', 404);
+    }
+  }
   const nextDate =
     input.transactionDate ?? input.transaction_date ?? existing.transactionDate;
   const nextNote = input.note !== undefined ? input.note : existing.note;
@@ -540,19 +556,21 @@ export async function updateTransaction(
       direction: 1,
     });
 
-    if (nextType === TransactionType.EXPENSE) {
-      await checkAndCreateBudgetAlert(tx, {
-        userId,
-        categoryId: nextCategoryId,
-        transactionId: record.id,
-        transactionDate: nextDate,
-      });
-    }
-
     return record;
   });
 
-  await logAudit({
+  if (nextType === TransactionType.EXPENSE && nextCategoryId) {
+    runInBackground('tx:budget-alert', () =>
+      checkAndCreateBudgetAlert({
+        userId,
+        categoryId: nextCategoryId,
+        transactionId: updated.id,
+        transactionDate: nextDate,
+      })
+    );
+  }
+
+  logAuditBackground({
     userId,
     action: 'TRANSACTION_UPDATE',
     entityType: 'TRANSACTION',
@@ -619,7 +637,7 @@ export async function deleteTransaction(
     });
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'TRANSACTION_DELETE',
     entityType: 'TRANSACTION',

@@ -7,7 +7,7 @@ import {
   type GoalMutation,
 } from '@prisma/client';
 import { prisma } from '../../config/prisma';
-import { logAudit } from '../../utils/audit';
+import { logAuditBackground, runInBackground } from '../../utils/audit';
 import { assertSufficientBalance } from '../../utils/balanceGuard';
 import { AppError } from '../../utils/errors';
 import type {
@@ -133,8 +133,9 @@ export async function createGoal(
       },
     });
 
+    let initialMutation: GoalMutation | null = null;
     if (currentAmount > 0) {
-      await tx.goalMutation.create({
+      initialMutation = await tx.goalMutation.create({
         data: {
           userId,
           goalId: created.id,
@@ -150,18 +151,13 @@ export async function createGoal(
       });
     }
 
-    return tx.financialGoal.findUniqueOrThrow({
-      where: { id: created.id },
-      include: {
-        mutations: {
-          orderBy: { createdAt: 'desc' },
-          take: 20,
-        },
-      },
-    });
+    return {
+      ...created,
+      mutations: initialMutation ? [initialMutation] : [],
+    };
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'GOAL_CREATE',
     entityType: 'FINANCIAL_GOAL',
@@ -202,7 +198,7 @@ export async function updateGoal(
     },
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'GOAL_UPDATE',
     entityType: 'FINANCIAL_GOAL',
@@ -307,25 +303,30 @@ export async function contributeGoal(
       },
     });
 
-    if (reachedTarget && existing.status !== GoalStatus.COMPLETED) {
-      await tx.notification.create({
-        data: {
-          userId,
-          type: NotificationType.GOAL_MILESTONE,
-          title: `Target "${goal.name}" Tercapai`,
-          body: `Tabungan "${goal.name}" telah mencapai target sebesar Rp ${targetAmount.toLocaleString('id-ID')}.`,
-        },
-      });
-    }
-
-    // Invalidate cache AI Advisor & Anomali agar langsung menghitung ulang dengan data terbaru
-    await tx.aiInsight.deleteMany({ where: { userId } });
-    await tx.spendingAnomaly.deleteMany({ where: { userId } });
-
     return goal;
   });
 
-  await logAudit({
+  runInBackground('goal:contribute-side-effects', async () => {
+    const ops: Promise<unknown>[] = [
+      prisma.aiInsight.deleteMany({ where: { userId } }),
+      prisma.spendingAnomaly.deleteMany({ where: { userId } }),
+    ];
+    if (reachedTarget && existing.status !== GoalStatus.COMPLETED) {
+      ops.push(
+        prisma.notification.create({
+          data: {
+            userId,
+            type: NotificationType.GOAL_MILESTONE,
+            title: `Target "${updated.name}" Tercapai`,
+            body: `Tabungan "${updated.name}" telah mencapai target sebesar Rp ${targetAmount.toLocaleString('id-ID')}.`,
+          },
+        })
+      );
+    }
+    await Promise.all(ops);
+  });
+
+  logAuditBackground({
     userId,
     action: 'GOAL_CONTRIBUTE',
     entityType: 'FINANCIAL_GOAL',
@@ -426,13 +427,17 @@ export async function withdrawGoal(
       },
     });
 
-    await tx.aiInsight.deleteMany({ where: { userId } });
-    await tx.spendingAnomaly.deleteMany({ where: { userId } });
-
     return updatedGoal;
   });
 
-  await logAudit({
+  runInBackground('goal:withdraw-cache-invalidate', () =>
+    Promise.all([
+      prisma.aiInsight.deleteMany({ where: { userId } }),
+      prisma.spendingAnomaly.deleteMany({ where: { userId } }),
+    ])
+  );
+
+  logAuditBackground({
     userId,
     action: 'GOAL_WITHDRAW',
     entityType: 'FINANCIAL_GOAL',
@@ -480,7 +485,7 @@ export async function deleteGoal(
     await tx.financialGoal.delete({ where: { id: goalId } });
   });
 
-  await logAudit({
+  logAuditBackground({
     userId,
     action: 'GOAL_DELETE',
     entityType: 'FINANCIAL_GOAL',

@@ -12,6 +12,7 @@ export type PendingDraftIntent =
 export interface CreateTransactionDraftData {
   type: 'EXPENSE' | 'INCOME';
   description?: string;
+  descriptionLocked?: boolean;
   amount?: number;
   walletId?: string;
   categoryId?: string;
@@ -96,6 +97,100 @@ export function setPendingDraft(userId: string, draft: PendingDraft): PendingDra
 
 export function clearPendingDraft(userId: string): void {
   draftStore.delete(userId);
+}
+
+const GENERIC_ITEM_WORDS = new Set([
+  'makan',
+  'makanan',
+  'makan pagi',
+  'makan siang',
+  'makan sore',
+  'makan malam',
+  'sarapan',
+  'makan berat',
+  'minum',
+  'minuman',
+  'minum dingin',
+  'minum manis',
+  'jajan',
+  'jajanan',
+  'cemilan',
+  'snack',
+  'jajan siang',
+  'jajan malam',
+  'jajan sore',
+  'belanja',
+  'belanjaan',
+  'belanja harian',
+  'belanja bulanan',
+  'barang',
+  'sesuatu',
+  'kebutuhan',
+  'keperluan',
+  'pengeluaran',
+  'transaksi',
+]);
+
+export function hasExactDescriptionBypass(message: string): string | null {
+  const match = message.match(
+    /\bdeskripsi\s+persis\s+([a-z0-9\s&._-]{2,40}?)(?:\s+pakai|\s+dari|$)/i
+  );
+  if (!match?.[1]) return null;
+  const clean = match[1].trim();
+  return clean.length >= 2 ? clean : null;
+}
+
+export function isGenericDescription(description?: string | null): boolean {
+  if (!description) return true;
+  const cleaned = description
+    .toLowerCase()
+    .replace(
+      /\b(beli|bayar|buat|untuk|uang|biaya|pakai|pake|catat|pengeluaran|pemasukan|di|ke|dari)\b/gi,
+      ' '
+    )
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (cleaned.length < 2) return true;
+  return GENERIC_ITEM_WORDS.has(cleaned);
+}
+
+export function getGenericItemPrompt(description?: string | null): {
+  question: string;
+  label: string;
+} {
+  const lower = (description ?? '').toLowerCase().trim();
+  if (/\bmakan\s+siang\b/.test(lower)) {
+    return { question: 'Makan siang apa yang kamu beli?', label: 'Makan siang' };
+  }
+  if (/\bmakan\s+malam\b/.test(lower)) {
+    return { question: 'Makan malam apa yang kamu beli?', label: 'Makan malam' };
+  }
+  if (/\bmakan\s+pagi\b/.test(lower)) {
+    return { question: 'Makan pagi apa yang kamu beli?', label: 'Makan pagi' };
+  }
+  if (/\bmakan\s+sore\b/.test(lower)) {
+    return { question: 'Makan sore apa yang kamu beli?', label: 'Makan sore' };
+  }
+  if (/\bsarapan\b/.test(lower)) {
+    return { question: 'Sarapan apa yang kamu beli?', label: 'Sarapan' };
+  }
+  if (/\bmakan\s+berat\b/.test(lower)) {
+    return { question: 'Makan berat apa yang kamu beli?', label: 'Makan berat' };
+  }
+  if (/\bmakan(an)?\b/.test(lower)) {
+    return { question: 'Makanan apa yang kamu beli?', label: 'Makanan' };
+  }
+  if (/\bjajan(an)?\b|\bcemilan\b|\bsnack\b/.test(lower)) {
+    return { question: 'Jajanan apa yang kamu beli?', label: 'Jajanan' };
+  }
+  if (/\bminum(an)?\b/.test(lower)) {
+    return { question: 'Minuman apa yang kamu beli?', label: 'Minuman' };
+  }
+  if (/\bbelanja(an)?\b/.test(lower)) {
+    return { question: 'Barang apa yang kamu beli?', label: 'Belanja' };
+  }
+  return { question: 'Barang apa yang kamu beli?', label: 'Barang' };
 }
 
 export function isCancelDraftCommand(message: string): boolean {
@@ -303,26 +398,34 @@ export function detectIncompleteDraftIntent(
     }
   }
 
-  // 4. Pengeluaran / Pemasukan tidak lengkap (misal "beli makan", "mau beli sesuatu", "gajian")
+  // 4. Pengeluaran / Pemasukan tidak lengkap atau item terlalu umum (misal "beli makan", "beli makanan 20rb pakai Uang Tunai")
+  const bypassDesc = hasExactDescriptionBypass(message);
   const isIncomePhrase = /\b(gajian|terima\s+gaji|dapat\s+uang|pemasukan|catat\s+pemasukan)\b/i.test(q);
   const isExpensePhrase = /\b(beli|bayar|jajan|pengeluaran|catat\s+pengeluaran|mau\s+beli)\b/i.test(q);
   if (isIncomePhrase || isExpensePhrase) {
     const txType: 'INCOME' | 'EXPENSE' = isIncomePhrase ? 'INCOME' : 'EXPENSE';
     const catType = txType === 'INCOME' ? CategoryType.INCOME : CategoryType.EXPENSE;
-    const matchedCat = resolveCategoryFallback(ctx.categories, message, catType);
+    const rawDesc =
+      bypassDesc ||
+      extractCleanLabelText(
+        message,
+        ctx.wallets,
+        /\b(aku|saya|mau|ingin|beli|bayar|catat|pengeluaran|pemasukan|pakai|pake|dari|via|di|ke|sesuatu|deskripsi|persis|konfirmasi)\b/gi
+      );
+    const isGeneric = !bypassDesc && isGenericDescription(rawDesc);
+    const matchedCat =
+      rawDesc && !isGeneric
+        ? resolveCategoryFallback(ctx.categories, rawDesc, catType)
+        : null;
     const nonOtherCat = matchedCat && !/^lain/i.test(matchedCat.name) ? matchedCat : undefined;
-    const description = extractCleanLabelText(
-      message,
-      ctx.wallets,
-      /\b(aku|saya|mau|ingin|beli|bayar|catat|pengeluaran|pemasukan|pakai|pake|dari|via|di|ke|sesuatu)\b/gi
-    );
 
-    if (!slots.amount || !slots.mentionedWallets[0] || !description) {
+    if (!slots.amount || !slots.mentionedWallets[0] || !rawDesc || isGeneric) {
       return {
         intent: 'CREATE_TRANSACTION',
         data: {
           type: txType,
-          description: description || undefined,
+          description: rawDesc || (/\bjajan\b/i.test(q) ? 'Jajanan' : undefined),
+          descriptionLocked: Boolean(bypassDesc),
           amount: slots.amount,
           walletId: slots.mentionedWallets[0]?.id,
           categoryId: nonOtherCat?.id,
@@ -346,12 +449,23 @@ export function mergePendingDraft(
     case 'CREATE_TRANSACTION': {
       const catType =
         existing.data.type === 'INCOME' ? CategoryType.INCOME : CategoryType.EXPENSE;
-      const newDesc = extractCleanLabelText(
-        message,
-        ctx.wallets,
-        /\b(aku|saya|mau|beli|bayar|pakai|pake|dari|via|di|ke)\b/gi
-      );
-      const mergedDesc = existing.data.description || newDesc || undefined;
+      const bypassDesc = hasExactDescriptionBypass(message);
+      const newDesc =
+        bypassDesc ||
+        extractCleanLabelText(
+          message,
+          ctx.wallets,
+          /\b(aku|saya|mau|beli|bayar|pakai|pake|dari|via|di|ke|deskripsi|persis|konfirmasi|catat|pengeluaran|pemasukan)\b/gi
+        );
+      const existingIsGeneric =
+        !existing.data.descriptionLocked &&
+        isGenericDescription(existing.data.description);
+      const mergedDesc = bypassDesc
+        ? bypassDesc
+        : existingIsGeneric && newDesc
+          ? newDesc
+          : existing.data.description || newDesc || undefined;
+      const locked = Boolean(bypassDesc) || Boolean(existing.data.descriptionLocked);
       const matchedCat = mergedDesc
         ? resolveCategoryFallback(ctx.categories, mergedDesc, catType)
         : null;
@@ -360,9 +474,13 @@ export function mergePendingDraft(
         data: {
           ...existing.data,
           description: mergedDesc,
+          descriptionLocked: locked,
           amount: existing.data.amount ?? slots.amount,
           walletId: existing.data.walletId ?? slots.mentionedWallets[0]?.id,
-          categoryId: existing.data.categoryId ?? matchedCat?.id,
+          categoryId:
+            existingIsGeneric && newDesc
+              ? matchedCat?.id
+              : existing.data.categoryId ?? matchedCat?.id,
         },
         updatedAt: Date.now(),
       };
@@ -467,7 +585,12 @@ export function evaluateDraftMissingSlots(draft: PendingDraft): string[] {
   switch (draft.intent) {
     case 'CREATE_TRANSACTION': {
       const missing: string[] = [];
-      if (!draft.data.description) missing.push('description');
+      if (
+        !draft.data.description ||
+        (!draft.data.descriptionLocked && isGenericDescription(draft.data.description))
+      ) {
+        missing.push('description');
+      }
       if (!draft.data.amount || draft.data.amount <= 0) missing.push('amount');
       if (!draft.data.walletId) missing.push('walletId');
       return missing;
@@ -521,14 +644,21 @@ export function buildDraftCard(
   switch (draft.intent) {
     case 'CREATE_TRANSACTION': {
       const isIncome = draft.data.type === 'INCOME';
+      const itemMissing =
+        !draft.data.description ||
+        (!draft.data.descriptionLocked && isGenericDescription(draft.data.description));
       return {
         type: 'DRAFT_CARD',
         title: isIncome ? 'Draf Pemasukan' : 'Draf Pengeluaran',
         rows: [
           {
             label: isIncome ? 'Sumber' : 'Item',
-            value: draft.data.description || 'Belum diisi',
-            isMissing: !draft.data.description,
+            value: itemMissing
+              ? draft.data.description
+                ? 'Belum spesifik'
+                : 'Belum diisi'
+              : draft.data.description!,
+            isMissing: itemMissing,
           },
           {
             label: 'Nominal',
@@ -543,7 +673,9 @@ export function buildDraftCard(
             isMissing: !draft.data.walletId,
           },
         ],
-        hint: 'Contoh balas: 25rb pakai Uang Tunai',
+        hint: itemMissing
+          ? 'Contoh balas: Nasi padang pakai Uang Tunai'
+          : 'Contoh balas: 25rb pakai Uang Tunai',
         formRoute: {
           pathname: '/transaction/form',
           params: {

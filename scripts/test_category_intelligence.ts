@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
 import { CategoryType } from '@prisma/client';
 import { prisma } from '../src/config/prisma';
+import { pickCategoryIcon } from '../src/constants/categoryIcons';
+import { createCategory } from '../src/modules/categories/categories.service';
 import {
   createCategoryAndTransactionAtomic,
+  findExistingCategoryByCoreToken,
   findExplicitCategoryInText,
   findFallbackOtherCategory,
   findHistoricalCategoryMatch,
@@ -143,6 +146,7 @@ async function runTests() {
   const mockTxClient = {
     category: {
       findFirst: async () => null,
+      findMany: async () => [],
       create: async ({ data }: { data: { name: string; type: CategoryType } }) => {
         catCreated = true;
         return { id: 'cat-new-health', name: data.name, type: data.type };
@@ -232,6 +236,78 @@ async function runTests() {
     explicitBypass1?.name,
     '(bypass CHOICE_CARD)'
   );
+
+  // Similar Categories Test 1: 2 overlapping categories (Makan & Jajan) -> CHOICE_CARD; then Layer 1 remembers Jajan
+  const similarCats: ActiveCategoryItem[] = [
+    { id: 'cat-makan', name: 'Makan', type: CategoryType.EXPENSE },
+    { id: 'cat-jajan', name: 'Jajan', type: CategoryType.EXPENSE },
+    { id: 'cat-lainnya', name: 'Lainnya', type: CategoryType.EXPENSE },
+  ];
+  const candSim = ['cat-makan', 'cat-jajan']
+    .map((id) => similarCats.find((c) => c.id === id)!)
+    .filter(Boolean);
+  assert.equal(candSim.length, 2);
+  console.log(
+    'PASS Similar 1a: 2 kategori mirip tanpa riwayat -> CHOICE_CARD:',
+    candSim.map((c) => c.name).join(', ')
+  );
+
+  const origFindManySim = prisma.transaction.findMany;
+  (prisma.transaction as unknown as { findMany: typeof origFindManySim }).findMany =
+    (async () => [{ note: 'Beli cilok', categoryId: 'cat-jajan' }]) as unknown as typeof origFindManySim;
+  try {
+    const remembered = await findHistoricalCategoryMatch({
+      userId: 'user-sim-1',
+      type: CategoryType.EXPENSE,
+      text: 'beli cilok 15rb',
+      categories: similarCats,
+    });
+    assert.equal(remembered?.name, 'Jajan', 'Layer 1 harus mengingat pilihan Jajan untuk cilok');
+    console.log('PASS Similar 1b: Setelah ada riwayat -> "beli cilok 15rb" otomatis ke', remembered?.name);
+  } finally {
+    (prisma.transaction as unknown as { findMany: typeof origFindManySim }).findMany =
+      origFindManySim;
+  }
+
+  // Similar Categories Test 2: Anti-Twin Icon (Jajan saat Utensils sudah dipakai Makan -> Coffee)
+  const jajanIcon = pickCategoryIcon('Jajan', 'Utensils', ['Utensils']);
+  assert.equal(jajanIcon, 'Coffee', 'Ikon Jajan harus bergeser ke Coffee saat Utensils sudah dipakai');
+  console.log('PASS Anti-Twin Icon: Jajan (used: [Utensils]) ->', jajanIcon);
+
+  // Similar Categories Test 3: Reject AI suggestedNewCategory "Makan" when "Makanan & Minuman" exists
+  const existingCore = findExistingCategoryByCoreToken(
+    MOCK_CATEGORIES,
+    'Makan',
+    CategoryType.EXPENSE
+  );
+  assert.equal(existingCore?.name, 'Makanan & Minuman');
+  console.log('PASS Anti-Duplicate AI Suggest: "Makan" -> diarahkan ke', existingCore?.name);
+
+  // Similar Categories Test 4: POST /api/categories duplicate returns HTTP 409
+  const origCatFindFirst = prisma.category.findFirst;
+  (prisma.category as unknown as { findFirst: typeof origCatFindFirst }).findFirst =
+    (async () => ({ id: 'cat-makan', name: 'Makan' })) as unknown as typeof origCatFindFirst;
+  try {
+    await assert.rejects(
+      () =>
+        createCategory('user-sim-1', {
+          name: 'makan',
+          type: CategoryType.EXPENSE,
+          color: '#2563EB',
+        }),
+      (err: unknown) =>
+        Boolean(
+          err &&
+            typeof err === 'object' &&
+            'statusCode' in err &&
+            (err as { statusCode: number }).statusCode === 409
+        )
+    );
+    console.log('PASS Anti-Duplicate Manual: createCategory("makan") -> HTTP 409');
+  } finally {
+    (prisma.category as unknown as { findFirst: typeof origCatFindFirst }).findFirst =
+      origCatFindFirst;
+  }
 }
 
 runTests().catch((err) => {

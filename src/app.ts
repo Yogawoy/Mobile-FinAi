@@ -5,6 +5,7 @@ import morgan from 'morgan';
 import { env } from './config/env';
 import { prisma } from './config/prisma';
 import { errorHandler, notFoundHandler } from './middlewares/error.middleware';
+import { apiRateLimiter } from './middlewares/rateLimit.middleware';
 import { aiRouter } from './modules/ai/ai.routes';
 import { authRouter } from './modules/auth/auth.routes';
 import { budgetsRouter } from './modules/budgets/budgets.routes';
@@ -18,6 +19,7 @@ import { walletsRouter } from './modules/wallets/wallets.routes';
 import { sendError, sendSuccess } from './utils/response';
 
 const app = express();
+app.set('trust proxy', 1);
 
 const allowedOrigins = env.CORS_ORIGIN.split(',')
   .map((origin) => origin.trim())
@@ -40,6 +42,19 @@ app.use(
   })
 );
 app.use(morgan(env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+if (env.NODE_ENV === 'development') {
+  app.use((req, res, next) => {
+    if (!req.originalUrl.startsWith('/api/')) {
+      return next();
+    }
+    const startNs = process.hrtime.bigint();
+    res.on('finish', () => {
+      const elapsedMs = Number(process.hrtime.bigint() - startNs) / 1_000_000;
+      console.log(`[PERF] ${req.method} ${req.originalUrl} - ${elapsedMs.toFixed(1)}ms`);
+    });
+    next();
+  });
+}
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/', (_req, res) => {
@@ -67,6 +82,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+app.use('/api', apiRateLimiter);
 app.use('/api/auth', authRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api/wallets', walletsRouter);

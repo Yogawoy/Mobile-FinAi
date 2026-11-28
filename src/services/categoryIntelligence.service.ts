@@ -1,5 +1,6 @@
 import { BudgetPeriod, CategoryType, TransactionType } from '@prisma/client';
 import { prisma } from '../config/prisma';
+import { pickCategoryIcon } from '../constants/categoryIcons';
 import { AppError } from '../utils/errors';
 
 export interface ActiveCategoryItem {
@@ -316,7 +317,8 @@ export function resolveCategoryFallback<T extends ActiveCategoryItem>(
       { re: /\b(buku|kursus|les|kuliah|spp|ukm|skripsi|seminar|sekolah|pendidikan|alat tulis)\b/i, targets: ['pendidikan', 'belajar', 'skripsi'] },
       { re: /\b(top\s?up|diamond|mlbb|mobile legends|valorant|steam|game|ps5|nintendo|roblox)\b/i, targets: ['game', 'hiburan'] },
       { re: /\b(whiskas|royal canin|pasir kucing|kucing|anjing|petshop|pakan)\b/i, targets: ['kucing', 'hewan', 'peliharaan'] },
-      { re: /\b(pecel|nasi|makan|bakso|mie|soto|warteg|gofood|grabfood|sarapan|ayam|sate|geprek|kopi|ngopi|cafe|boba|matcha)\b/i, targets: ['makan', 'minum', 'kuliner', 'ngopi'] },
+      { re: /\b(cilok|seblak|gorengan|pentol|martabak|boba|mixue|es teh|kopi|ngopi|cafe|matcha|snack|batagor|siomay|jajanan|cemilan)\b/i, targets: ['jajan', 'cemilan', 'ngopi', 'makan'] },
+      { re: /\b(pecel|nasi|makan|bakso|mie|soto|warteg|gofood|grabfood|sarapan|ayam|sate|geprek|nasi padang|nasi goreng|makan siang|makan malam)\b/i, targets: ['makan', 'minum', 'kuliner'] },
       { re: /\b(ojek|gojek|grab|maxim|bensin|pertamax|pertalite|parkir|tol|etoll|kereta|krl|mrt|bus|transjakarta)\b/i, targets: ['transport'] },
       { re: /\b(ganti oli|\boli\b|servis motor|servis mobil|bengkel|tambal ban|cuci motor|cuci mobil|sparepart)\b/i, targets: ['kendaraan', 'servis', 'otomotif'] },
       { re: /\b(listrik|pln|token|pdam|wifi|internet|indihome|biznet|pulsa|kuota|paket data|bpjs|tagihan)\b/i, targets: ['tagihan', 'utilitas', 'pulsa', 'internet'] },
@@ -330,10 +332,10 @@ export function resolveCategoryFallback<T extends ActiveCategoryItem>(
 
     for (const rule of objectRules) {
       if (rule.re.test(lower)) {
-        const hit = pool.find((c) =>
-          rule.targets.some((t) => c.name.toLowerCase().includes(t))
-        );
-        if (hit) return hit;
+        for (const t of rule.targets) {
+          const hit = pool.find((c) => c.name.toLowerCase().includes(t));
+          if (hit) return hit;
+        }
       }
     }
   } else {
@@ -409,40 +411,46 @@ export function toTitleCaseCategoryName(raw: string): string {
 
 export function getCategoryVisualDefaults(
   name: string,
-  type: CategoryType
+  type: CategoryType,
+  usedIcons: string[] = []
 ): { icon: string; color: string } {
+  const icon = pickCategoryIcon(name, undefined, usedIcons);
   const lower = name.toLowerCase();
-  if (/kesehatan|medis|obat|dokter/.test(lower)) {
-    return { icon: 'HeartPulse', color: '#DC2626' };
+  let color = type === CategoryType.INCOME ? '#059669' : '#2563EB';
+  if (/kesehatan|medis|obat|dokter/.test(lower)) color = '#DC2626';
+  else if (/pendidikan|belajar|kursus|skripsi|buku/.test(lower)) color = '#2563EB';
+  else if (/game|hiburan/.test(lower)) color = '#0EA5E9';
+  else if (/skincare|perawatan|kecantikan/.test(lower)) color = '#EC4899';
+  else if (/hewan|kucing|anjing|peliharaan/.test(lower)) color = '#D97706';
+  else if (/olahraga|gym|fitness|donasi|sedekah|zakat|amal/.test(lower)) color = '#059669';
+  else if (/makan|minum|jajan|kopi|kuliner/.test(lower)) color = '#EA580C';
+
+  return { icon, color };
+}
+
+export function findExistingCategoryByCoreToken<T extends ActiveCategoryItem>(
+  categories: T[],
+  suggestedName: string,
+  type: CategoryType
+): T | null {
+  const clean = suggestedName.trim().toLowerCase();
+  if (!clean) return null;
+  const pool = categories.filter((c) => c.type === type);
+
+  const exact = pool.find((c) => c.name.toLowerCase() === clean);
+  if (exact) return exact;
+
+  const stopTokens = new Set(['dan', 'atau', 'untuk', 'yang', 'lainnya', 'biaya', 'uang']);
+  const coreTokens = clean
+    .split(/[\s&/,._-]+/)
+    .filter((t) => t.length >= 3 && !stopTokens.has(t));
+
+  for (const token of coreTokens) {
+    const match = pool.find((c) => c.name.toLowerCase().includes(token));
+    if (match) return match;
   }
-  if (/pendidikan|belajar|kursus|skripsi|buku/.test(lower)) {
-    return { icon: 'GraduationCap', color: '#2563EB' };
-  }
-  if (/game|hiburan/.test(lower)) {
-    return { icon: 'Gamepad2', color: '#0EA5E9' };
-  }
-  if (/skincare|perawatan|kecantikan/.test(lower)) {
-    return { icon: 'Sparkles', color: '#EC4899' };
-  }
-  if (/hewan|kucing|anjing|peliharaan/.test(lower)) {
-    return { icon: 'PawPrint', color: '#D97706' };
-  }
-  if (/olahraga|gym|fitness/.test(lower)) {
-    return { icon: 'Dumbbell', color: '#059669' };
-  }
-  if (/donasi|sedekah|zakat|amal/.test(lower)) {
-    return { icon: 'HeartHandshake', color: '#059669' };
-  }
-  if (/makan|minum|kopi|kuliner/.test(lower)) {
-    return { icon: 'Utensils', color: '#EA580C' };
-  }
-  if (/transport|ojek|bensin/.test(lower)) {
-    return { icon: 'Car', color: '#2563EB' };
-  }
-  return {
-    icon: 'Tag',
-    color: type === CategoryType.INCOME ? '#059669' : '#2563EB',
-  };
+
+  return null;
 }
 
 const STANDARD_SUGGESTABLE_CATEGORIES: Array<{
@@ -549,7 +557,6 @@ export async function createCategoryAndTransactionAtomic(params: {
   if (!cleanName) {
     throw new AppError('Nama kategori tidak valid', 400);
   }
-  const visuals = getCategoryVisualDefaults(cleanName, params.type);
 
   return prisma.$transaction(async (tx) => {
     let category = await tx.category.findFirst({
@@ -562,6 +569,15 @@ export async function createCategoryAndTransactionAtomic(params: {
     let isNewCategory = false;
 
     if (!category) {
+      const existingIcons = await tx.category.findMany({
+        where: { userId: params.userId, type: params.type },
+        select: { icon: true },
+      });
+      const visuals = getCategoryVisualDefaults(
+        cleanName,
+        params.type,
+        existingIcons.map((c) => c.icon)
+      );
       category = await tx.category.create({
         data: {
           userId: params.userId,
@@ -639,7 +655,6 @@ export async function createCategoryAndBudgetAtomic(params: {
   if (!cleanName) {
     throw new AppError('Nama kategori tidak valid', 400);
   }
-  const visuals = getCategoryVisualDefaults(cleanName, CategoryType.EXPENSE);
 
   return prisma.$transaction(async (tx) => {
     let category = await tx.category.findFirst({
@@ -652,6 +667,15 @@ export async function createCategoryAndBudgetAtomic(params: {
     let isNewCategory = false;
 
     if (!category) {
+      const existingIcons = await tx.category.findMany({
+        where: { userId: params.userId, type: CategoryType.EXPENSE },
+        select: { icon: true },
+      });
+      const visuals = getCategoryVisualDefaults(
+        cleanName,
+        CategoryType.EXPENSE,
+        existingIcons.map((c) => c.icon)
+      );
       category = await tx.category.create({
         data: {
           userId: params.userId,

@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { sendSuccess } from '../../utils/response';
 import type {
+  GoogleLoginInput,
   LoginInput,
   LogoutInput,
   RefreshInput,
@@ -31,6 +32,12 @@ export async function loginHandler(req: Request, res: Response) {
     getRequestMeta(req)
   );
   return sendSuccess(res, 'Login berhasil', data, 200);
+}
+
+export async function googleLoginHandler(req: Request, res: Response) {
+  const { idToken } = req.body as GoogleLoginInput;
+  const data = await authService.loginWithGoogle(idToken, getRequestMeta(req));
+  return sendSuccess(res, 'Login dengan Google berhasil', data, 200);
 }
 
 export async function refreshHandler(req: Request, res: Response) {
