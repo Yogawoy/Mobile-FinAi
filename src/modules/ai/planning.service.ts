@@ -1,5 +1,6 @@
 import { TransactionType } from '@prisma/client';
 import { prisma } from '../../config/prisma';
+import { getMonthDateRangeWib } from '../../utils/budgetWindow';
 
 export interface PlanningGoalInput {
   id: string;
@@ -311,8 +312,7 @@ export async function buildSpendingBreakdown(
   month: number,
   year: number
 ) {
-  const start = new Date(year, month - 1, 1);
-  const end = new Date(year, month, 1);
+  const { start, end } = getMonthDateRangeWib(month, year);
 
   const expenses = await prisma.transaction.findMany({
     where: {
@@ -326,25 +326,27 @@ export async function buildSpendingBreakdown(
     },
   });
 
-  const totals = new Map<string, number>();
+  const totals = new Map<string, { total: number; count: number }>();
   let totalExpense = 0;
 
   for (const tx of expenses) {
     const amt = Number(tx.amount);
     totalExpense += amt;
     const catName = tx.category?.name ?? 'Lainnya';
-    totals.set(catName, (totals.get(catName) ?? 0) + amt);
+    const prev = totals.get(catName) ?? { total: 0, count: 0 };
+    totals.set(catName, { total: prev.total + amt, count: prev.count + 1 });
   }
 
   const items = Array.from(totals.entries())
-    .map(([category, total]) => ({
+    .map(([category, agg]) => ({
       category,
-      total: Math.round(total),
+      total: Math.round(agg.total),
+      count: agg.count,
       percentage:
-        totalExpense > 0 ? Math.round((total / totalExpense) * 1000) / 10 : 0,
+        totalExpense > 0 ? Math.round((agg.total / totalExpense) * 1000) / 10 : 0,
     }))
     .sort((a, b) => b.total - a.total)
-    .slice(0, 6);
+    .slice(0, 5);
 
   const monthNames = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',

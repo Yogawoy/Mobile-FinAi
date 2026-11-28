@@ -5,6 +5,7 @@ import {
   getBudgetPeriodLabel,
   getDaysInMonth,
   getMonthDateRangeWib,
+  getWibNow,
   toMonthlyEquivalent,
 } from '../../utils/budgetWindow';
 import { logAudit } from '../../utils/audit';
@@ -16,6 +17,41 @@ export function getMonthDateRange(month: number, year: number) {
 }
 
 export { getBudgetDateRange, getBudgetPeriodLabel };
+
+function computeBudgetRemainderMetrics(
+  period: BudgetPeriod,
+  month: number,
+  year: number,
+  limitAmount: number,
+  spentAmount: number
+) {
+  const remaining = Math.max(0, limitAmount - spentAmount);
+  const exceeded = Math.max(0, spentAmount - limitAmount);
+  const wibNow = getWibNow();
+  const daysInMonth = getDaysInMonth(month, year);
+
+  let daysLeftInPeriod = 1;
+  if (period === BudgetPeriod.WEEKLY) {
+    daysLeftInPeriod = wibNow.dayOfWeek === 0 ? 1 : 8 - wibNow.dayOfWeek;
+  } else if (period === BudgetPeriod.MONTHLY) {
+    daysLeftInPeriod =
+      wibNow.month === month && wibNow.year === year
+        ? Math.max(1, daysInMonth - wibNow.day + 1)
+        : daysInMonth;
+  }
+
+  const safeDailyAmount =
+    (period === BudgetPeriod.WEEKLY || period === BudgetPeriod.MONTHLY) && remaining > 0
+      ? Math.floor(remaining / Math.max(1, daysLeftInPeriod))
+      : 0;
+
+  return {
+    remaining,
+    exceeded,
+    daysLeftInPeriod,
+    safeDailyAmount,
+  };
+}
 
 export async function listBudgets(
   userId: string,
@@ -99,6 +135,13 @@ export async function listBudgets(
       ? resetOverrides.get(b.id)!
       : spentByPeriod.get(b.period)?.get(b.categoryId) ?? 0;
     const remainingAmount = limitAmount - spentAmount;
+    const remainderMetrics = computeBudgetRemainderMetrics(
+      b.period,
+      b.month,
+      b.year,
+      limitAmount,
+      spentAmount
+    );
     const percentage =
       limitAmount > 0 ? Math.round((spentAmount / limitAmount) * 1000) / 10 : 0;
 
@@ -123,6 +166,7 @@ export async function listBudgets(
       monthlyEquivalentLimit,
       spentAmount,
       remainingAmount,
+      ...remainderMetrics,
       percentage,
       alertThresholdPct: b.alertThresholdPct,
       status,
@@ -335,6 +379,13 @@ export async function getBudgetById(userId: string, budgetId: string) {
   const limitAmount = isArchivedMonth ? monthlyEquivalentLimit : rawLimit;
   const spentAmount = Number(agg._sum.amount ?? 0);
   const remainingAmount = limitAmount - spentAmount;
+  const remainderMetrics = computeBudgetRemainderMetrics(
+    b.period,
+    b.month,
+    b.year,
+    limitAmount,
+    spentAmount
+  );
   const percentage =
     limitAmount > 0 ? Math.round((spentAmount / limitAmount) * 1000) / 10 : 0;
 
@@ -359,6 +410,7 @@ export async function getBudgetById(userId: string, budgetId: string) {
     monthlyEquivalentLimit,
     spentAmount,
     remainingAmount,
+    ...remainderMetrics,
     percentage,
     alertThresholdPct: b.alertThresholdPct,
     status,
