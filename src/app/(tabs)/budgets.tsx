@@ -88,6 +88,17 @@ function renderGoalIcon(key: GoalIconKey, color: string) {
   }
 }
 
+function computeLocalDaysLeft(period: BudgetPeriod): number {
+  const now = new Date();
+  if (period === 'DAILY') return 1;
+  if (period === 'WEEKLY') {
+    const day = now.getDay();
+    return day === 0 ? 1 : 8 - day;
+  }
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  return Math.max(1, daysInMonth - now.getDate() + 1);
+}
+
 function getBudgetStatus(spent: number, limit: number, thresholdPct: number) {
   const pct = limit > 0 ? Math.round((spent / limit) * 100) : 0;
   if (pct > 100) {
@@ -448,19 +459,21 @@ export default function BudgetsTabScreen() {
 
               <View style={styles.microRow}>
                 <View style={styles.microCol}>
-                  <Text style={styles.microLabel}>Sisa Anggaran</Text>
+                  <Text style={styles.microLabel}>
+                    {budgetSummary.remaining < 0 ? 'Lewat Batas' : 'Masih Bisa Dipakai'}
+                  </Text>
                   <Text
                     style={[
                       styles.microValue,
                       Typography.tabularNums,
                       {
                         color:
-                          budgetSummary.remaining < 0 ? Colors.expense : Colors.income,
+                          budgetSummary.remaining < 0 ? '#DC2626' : '#059669',
                       },
                     ]}
                   >
                     {budgetSummary.remaining < 0
-                      ? `-${formatIDR(Math.abs(budgetSummary.remaining))}`
+                      ? formatIDR(Math.abs(budgetSummary.remaining))
                       : formatIDR(budgetSummary.remaining)}
                   </Text>
                 </View>
@@ -468,7 +481,7 @@ export default function BudgetsTabScreen() {
                 <View style={styles.microDivider} />
 
                 <View style={styles.microCol}>
-                  <Text style={styles.microLabel}>Kategori Waspada / Over</Text>
+                  <Text style={styles.microLabel}>Perlu Perhatian</Text>
                   <Text
                     style={[
                       styles.microValue,
@@ -631,7 +644,6 @@ export default function BudgetsTabScreen() {
                 budget.limit,
                 budget.alertThresholdPct
               );
-              const diff = budget.limit - budget.spent;
               const bPeriod = budget.period ?? 'MONTHLY';
               const periodShort =
                 bPeriod === 'DAILY' ? 'Harian' : bPeriod === 'WEEKLY' ? 'Mingguan' : 'Bulanan';
@@ -641,6 +653,36 @@ export default function BudgetsTabScreen() {
                   : bPeriod === 'WEEKLY'
                     ? 'minggu ini'
                     : 'bulan ini';
+              const remaining =
+                budget.remaining ?? Math.max(0, budget.limit - budget.spent);
+              const exceeded =
+                budget.exceeded ?? Math.max(0, budget.spent - budget.limit);
+              const daysLeftInPeriod =
+                budget.daysLeftInPeriod ?? computeLocalDaysLeft(bPeriod);
+              const safeDailyAmount =
+                budget.safeDailyAmount ??
+                ((bPeriod === 'WEEKLY' || bPeriod === 'MONTHLY') && remaining > 0
+                  ? Math.floor(remaining / Math.max(1, daysLeftInPeriod))
+                  : 0);
+
+              const usableLabel =
+                remaining > 0
+                  ? `Bisa dipakai ${periodSpentPhrase}`
+                  : exceeded === 0
+                    ? 'Batas periode ini sudah habis'
+                    : `Lewat batas ${periodSpentPhrase}`;
+              const usableAmountText =
+                remaining > 0
+                  ? formatIDR(remaining)
+                  : exceeded === 0
+                    ? 'Rp 0'
+                    : formatIDR(exceeded);
+              const usableColor =
+                exceeded > 0
+                  ? '#DC2626'
+                  : remaining === 0 || st.statusKey === 'WARN'
+                    ? '#D97706'
+                    : '#059669';
 
               return (
                 <Animated.View
@@ -675,18 +717,6 @@ export default function BudgetsTabScreen() {
                               {budget.categoryName}
                             </Text>
                           ) : null}
-                          <Text
-                            style={[
-                              styles.cardSubMicro,
-                              Typography.tabularNums,
-                              diff < 0 && { color: Colors.expense },
-                            ]}
-                            numberOfLines={1}
-                          >
-                            {diff < 0
-                              ? `Melebihi ${formatIDR(Math.abs(diff))}`
-                              : `Sisa ${formatIDR(diff)}`}
-                          </Text>
                         </View>
                       </View>
 
@@ -702,21 +732,39 @@ export default function BudgetsTabScreen() {
                       </View>
                     </View>
 
+                    <View style={styles.usableHighlightRow}>
+                      <Text style={styles.usableHighlightLabel} numberOfLines={1}>
+                        {usableLabel}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.usableHighlightValue,
+                          Typography.tabularNums,
+                          { color: usableColor },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {usableAmountText}
+                      </Text>
+                    </View>
+
                     <View style={styles.cardProgressTrack}>
                       <AnimatedProgressFill pct={st.pct} color={st.color} height={7} />
                     </View>
 
                     <View style={styles.cardBottomRow}>
                       <Text style={[styles.bottomLeftText, Typography.tabularNums]}>
-                        Terpakai {periodSpentPhrase} {formatIDR(budget.spent)}
+                        Terpakai {formatIDR(budget.spent)} dari {formatIDR(budget.limit)}
                       </Text>
                       <Text style={[styles.bottomRightText, Typography.tabularNums]}>
-                        Batas {formatIDR(budget.limit)} ({st.pct}%)
+                        {st.pct}%
                       </Text>
                     </View>
-                    {bPeriod !== 'MONTHLY' && budget.monthlyEquivalentLimit ? (
-                      <Text style={[styles.monthlyEqMicro, Typography.tabularNums]}>
-                        Setara ≈ {formatIDR(budget.monthlyEquivalentLimit)}/bln
+                    {(bPeriod === 'WEEKLY' || bPeriod === 'MONTHLY') &&
+                    remaining > 0 &&
+                    safeDailyAmount > 0 ? (
+                      <Text style={[styles.safeDailyHelper, Typography.tabularNums]}>
+                        Aman dipakai sekitar {formatIDR(safeDailyAmount)} per hari
                       </Text>
                     ) : null}
                   </Pressable>
@@ -1199,6 +1247,33 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     textAlign: 'right',
     marginTop: 4,
+  },
+  usableHighlightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 12,
+    gap: 8,
+  },
+  usableHighlightLabel: {
+    flex: 1,
+    fontFamily: FontFamily.medium,
+    fontSize: 12.5,
+    color: '#475569',
+  },
+  usableHighlightValue: {
+    fontFamily: FontFamily.bold,
+    fontSize: 15,
+  },
+  safeDailyHelper: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11.5,
+    color: '#64748B',
+    marginTop: 6,
   },
   periodFilterRow: {
     flexDirection: 'row',

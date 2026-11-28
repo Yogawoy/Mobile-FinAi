@@ -99,7 +99,14 @@ function computeMonthlyEquivalent(limit: number, period: BudgetPeriod): number {
 }
 
 export default function BudgetFormScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, name: paramName, amount: paramAmount, period: paramPeriod, categoryId: paramCategoryId } =
+    useLocalSearchParams<{
+      id?: string;
+      name?: string;
+      amount?: string;
+      period?: BudgetPeriod;
+      categoryId?: string;
+    }>();
   const isEdit = Boolean(id);
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -114,10 +121,19 @@ export default function BudgetFormScreen() {
   const [nameFocused, setNameFocused] = useState(false);
   const [limitFocused, setLimitFocused] = useState(false);
 
-  const [nameText, setNameText] = useState('');
-  const [limitText, setLimitText] = useState('');
-  const [period, setPeriod] = useState<BudgetPeriod>('MONTHLY');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [nameText, setNameText] = useState(() => (!isEdit && paramName ? paramName : ''));
+  const [limitText, setLimitText] = useState(() =>
+    !isEdit && paramAmount ? formatThousands(paramAmount) : ''
+  );
+  const [period, setPeriod] = useState<BudgetPeriod>(() =>
+    !isEdit &&
+    (paramPeriod === 'DAILY' || paramPeriod === 'WEEKLY' || paramPeriod === 'MONTHLY')
+      ? paramPeriod
+      : 'MONTHLY'
+  );
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
+    () => (!isEdit && paramCategoryId ? paramCategoryId : '')
+  );
   const [selectedCategoryName, setSelectedCategoryName] = useState<string>('');
   const [thresholdPct, setThresholdPct] = useState<number>(80);
   const [editingMonth, setEditingMonth] = useState<number>(() => new Date().getMonth() + 1);

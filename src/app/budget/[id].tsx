@@ -110,7 +110,28 @@ export default function BudgetDetailScreen() {
   }
 
   const pct = budget.limit > 0 ? Math.round((budget.spent / budget.limit) * 100) : 0;
-  const diff = budget.limit - budget.spent;
+  const remaining = budget.remaining ?? Math.max(0, budget.limit - budget.spent);
+  const exceeded = budget.exceeded ?? Math.max(0, budget.spent - budget.limit);
+  const nowLocal = new Date();
+  const fallbackDaysLeft =
+    bPeriod === 'DAILY'
+      ? 1
+      : bPeriod === 'WEEKLY'
+        ? nowLocal.getDay() === 0
+          ? 1
+          : 8 - nowLocal.getDay()
+        : Math.max(
+            1,
+            new Date(nowLocal.getFullYear(), nowLocal.getMonth() + 1, 0).getDate() -
+              nowLocal.getDate() +
+              1
+          );
+  const daysLeftInPeriod = budget.daysLeftInPeriod ?? fallbackDaysLeft;
+  const safeDailyAmount =
+    budget.safeDailyAmount ??
+    ((bPeriod === 'WEEKLY' || bPeriod === 'MONTHLY') && remaining > 0
+      ? Math.floor(remaining / Math.max(1, daysLeftInPeriod))
+      : 0);
   const isOver = pct > 100;
   const isWarn = !isOver && pct >= budget.alertThresholdPct;
   const statusConfig = isOver
@@ -118,6 +139,34 @@ export default function BudgetDetailScreen() {
     : isWarn
       ? { label: 'Waspada', color: Colors.warning, bg: Colors.warningSoft, text: Colors.warningText }
       : { label: 'Aman', color: Colors.income, bg: Colors.incomeSoft, text: Colors.incomeText };
+
+  const periodScopeLabel =
+    bPeriod === 'DAILY'
+      ? 'Hari Ini'
+      : bPeriod === 'WEEKLY'
+        ? 'Minggu Ini'
+        : 'Bulan Ini';
+  const heroCaption =
+    remaining > 0
+      ? `Bisa Dipakai ${periodScopeLabel}`
+      : exceeded === 0
+        ? 'Batas Periode Ini Sudah Habis'
+        : `Lewat Batas ${periodScopeLabel}`;
+  const heroAmountText =
+    exceeded > 0
+      ? formatIDR(exceeded)
+      : remaining === 0
+        ? 'Rp 0'
+        : formatIDR(remaining);
+  const heroAmountColor =
+    exceeded > 0 ? '#DC2626' : remaining === 0 || isWarn ? '#D97706' : '#059669';
+
+  const dailyGuideText =
+    bPeriod === 'DAILY'
+      ? 'Sisa batas untuk hari ini, otomatis diulang besok pukul 00.00 WIB'
+      : remaining > 0
+        ? `Kamu bisa pakai sekitar ${formatIDR(safeDailyAmount)} per hari untuk ${daysLeftInPeriod} hari tersisa ${bPeriod === 'WEEKLY' ? 'minggu ini' : 'bulan ini'}`
+        : null;
 
   const txCount = categoryTransactions.length;
   const avgSpend = txCount > 0 ? Math.round(budget.spent / txCount) : 0;
@@ -183,16 +232,18 @@ export default function BudgetDetailScreen() {
             </View>
           </View>
 
+          <Text style={styles.heroCaption}>{heroCaption}</Text>
+
           <Text
             style={[
               styles.heroRemaining,
               Typography.tabularNums,
-              { color: diff < 0 ? Colors.expense : Colors.textPrimary },
+              { color: heroAmountColor },
             ]}
             numberOfLines={1}
             adjustsFontSizeToFit
           >
-            {diff < 0 ? `Melebihi ${formatIDR(Math.abs(diff))}` : `Sisa ${formatIDR(diff)}`}
+            {heroAmountText}
           </Text>
 
           <View style={styles.progressTrack}>
@@ -213,10 +264,12 @@ export default function BudgetDetailScreen() {
             </Text>
           </View>
 
-          {bPeriod !== 'MONTHLY' && budget.monthlyEquivalentLimit ? (
-            <Text style={[styles.monthlyEqNote, Typography.tabularNums]}>
-              Setara ≈ {formatIDR(budget.monthlyEquivalentLimit)}/bulan
-            </Text>
+          {dailyGuideText ? (
+            <View style={styles.dailyGuideBox}>
+              <Text style={[styles.dailyGuideText, Typography.tabularNums]}>
+                {dailyGuideText}
+              </Text>
+            </View>
           ) : null}
 
           <View style={styles.miniTilesRow}>
@@ -411,9 +464,15 @@ const styles = StyleSheet.create({
     fontFamily: FontFamily.semibold,
     fontSize: 11.5,
   },
+  heroCaption: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
   heroRemaining: {
     fontFamily: FontFamily.bold,
-    fontSize: 26,
+    fontSize: 28,
     marginBottom: 12,
   },
   progressTrack: {
@@ -448,6 +507,19 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: '#94A3B8',
     marginTop: 6,
+  },
+  dailyGuideBox: {
+    marginTop: 12,
+    backgroundColor: '#EBF2FF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dailyGuideText: {
+    fontFamily: FontFamily.medium,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#1E40AF',
   },
   miniTilesRow: {
     flexDirection: 'row',

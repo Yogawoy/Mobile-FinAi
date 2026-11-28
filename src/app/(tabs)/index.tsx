@@ -272,12 +272,16 @@ export default function HomeTabScreen() {
   const aiHealth = useMemo(() => {
     if (!sawHealth || !sawHealth.hasEnoughData || sawHealth.healthScore === null) {
       const txCount = sawHealth?.txCount ?? transactions.length;
+      const minNeeded = sawHealth?.minTransactionsNeeded ?? 3;
+      const progressPct = Math.min(100, Math.round((txCount / Math.max(1, minNeeded)) * 100));
       return {
-        scoreText: '--/100',
+        scoreValue: '--',
+        scorePct: progressPct,
+        hasScore: false,
         status: 'Belum Cukup Data',
-        toneColor: '#64748B',
-        toneBg: '#F1F5F9',
-        insight: `Catat ${txCount}/3 transaksi untuk membuka Skor Kesehatan SAW`,
+        toneColor: '#2563EB',
+        toneBg: '#EBF2FF',
+        insight: `Catat ${txCount}/${minNeeded} transaksi untuk membuka Skor AI`,
       };
     }
 
@@ -288,13 +292,23 @@ export default function HomeTabScreen() {
       Critical: { color: '#DC2626', bg: '#FEF2F2' },
       INSUFFICIENT_DATA: { color: '#64748B', bg: '#F1F5F9' },
     } as const;
+    const insightMap = {
+      Strong: 'Keuangan sehat, pertahankan ritme menabung bulan ini',
+      Stable: 'Kondisi stabil, pantau pengeluaran agar tetap aman',
+      Warning: 'Pengeluaran mulai tinggi, perketat batas anggaran',
+      Critical: 'Perlu perhatian pada arus kas dan batas anggaran',
+      INSUFFICIENT_DATA: 'Ketuk untuk lihat analisis dan proyeksi',
+    } as const;
     const tone = colorMap[sawHealth.classification];
+    const clampedScore = Math.max(0, Math.min(100, Math.round(sawHealth.healthScore)));
     return {
-      scoreText: `${sawHealth.healthScore}`,
+      scoreValue: `${clampedScore}`,
+      scorePct: clampedScore,
+      hasScore: true,
       status: sawHealth.statusLabel,
       toneColor: tone.color,
       toneBg: tone.bg,
-      insight: 'Ketuk untuk lihat analisis & proyeksi',
+      insight: insightMap[sawHealth.classification],
     };
   }, [sawHealth, transactions.length]);
 
@@ -643,43 +657,44 @@ export default function HomeTabScreen() {
               accessibilityLabel="Lihat Skor AI dan Prediksi Arus Kas"
               style={({ pressed }) => [
                 styles.aiStrip,
-                pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
+                pressed && { opacity: 0.78 },
               ]}
             >
-              <View style={[styles.aiScoreBadge, { backgroundColor: aiHealth.toneBg }]}>
-                <Text
-                  style={[styles.aiScoreNumber, Typography.tabularNums, { color: aiHealth.toneColor }]}
-                  numberOfLines={1}
-                  maxFontSizeMultiplier={1.1}
-                >
-                  {aiHealth.scoreText}
-                </Text>
-                <Text
-                  style={[styles.aiScoreUnit, { color: aiHealth.toneColor }]}
-                  numberOfLines={1}
-                  maxFontSizeMultiplier={1.1}
-                >
-                  SKOR
-                </Text>
+              <View style={styles.aiTopRow}>
+                <View style={styles.aiTitleGroup}>
+                  <Sparkles size={15} color={Colors.primary} strokeWidth={2.2} />
+                  <Text style={styles.aiStripTitle}>Skor AI</Text>
+                  <Text style={[styles.aiStatusText, { color: aiHealth.toneColor }]} numberOfLines={1}>
+                    {aiHealth.status}
+                  </Text>
+                </View>
+
+                <View style={styles.aiScoreRight}>
+                  <Text style={[styles.aiScoreNumber, Typography.tabularNums, { color: aiHealth.hasScore ? aiHealth.toneColor : Colors.textPrimary }]}>
+                    {aiHealth.scoreValue}
+                    <Text style={styles.aiScoreMax}>/100</Text>
+                  </Text>
+                  <ChevronRight size={16} color={Colors.primary} strokeWidth={2.2} />
+                </View>
               </View>
 
-              <View style={styles.aiStripBody}>
-                <View style={styles.aiStripHeader}>
-                  <Sparkles size={13} color={Colors.primary} strokeWidth={2.2} />
-                  <Text style={styles.aiStripTitle}>Skor AI</Text>
-                  <View style={[styles.aiStatusTag, { backgroundColor: aiHealth.toneBg }]}>
-                    <Text style={[styles.aiStatusTagText, { color: aiHealth.toneColor }]}>
-                      {aiHealth.status}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.aiStripText} numberOfLines={2}>
+              <View style={styles.aiProgressTrack}>
+                <View
+                  style={[
+                    styles.aiProgressFill,
+                    {
+                      width: `${aiHealth.scorePct}%`,
+                      backgroundColor: aiHealth.toneColor,
+                    },
+                  ]}
+                />
+              </View>
+
+              <View style={styles.aiBottomRow}>
+                <Text style={styles.aiStripText} numberOfLines={1}>
                   {aiHealth.insight}
                 </Text>
-              </View>
-
-              <View style={styles.aiChevronCircle}>
-                <ChevronRight size={15} color={Colors.primary} strokeWidth={2.3} />
+                <Text style={styles.aiActionLinkText}>Lihat analisis</Text>
               </View>
             </Pressable>
           </View>
@@ -1169,76 +1184,77 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
   },
   aiStrip: {
+    borderTopWidth: 1,
+    borderTopColor: '#EEF2F7',
+    paddingTop: 14,
+    marginTop: 2,
+    gap: 8,
+  },
+  aiTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#F4F8FF',
-    borderWidth: 1,
-    borderColor: '#DCE8FF',
-    borderRadius: 16,
-    padding: 12,
+    justifyContent: 'space-between',
+    gap: 8,
   },
-  aiScoreBadge: {
-    minWidth: 48,
-    minHeight: 48,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 14,
-    flexShrink: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  aiScoreNumber: {
-    fontFamily: FontFamily.bold,
-    fontSize: 17,
-    lineHeight: 20,
-  },
-  aiScoreUnit: {
-    fontFamily: FontFamily.bold,
-    fontSize: 9.5,
-    letterSpacing: 0.4,
-    marginTop: 1,
-  },
-  aiStripBody: {
+  aiTitleGroup: {
     flex: 1,
     minWidth: 0,
-    flexShrink: 1,
-    gap: 4,
-  },
-  aiStripHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
   },
   aiStripTitle: {
     fontFamily: FontFamily.bold,
-    fontSize: 12.5,
+    fontSize: 13.5,
     color: Colors.textPrimary,
   },
-  aiStatusTag: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 99,
-  },
-  aiStatusTagText: {
+  aiStatusText: {
     fontFamily: FontFamily.semibold,
-    fontSize: 10.5,
+    fontSize: 12,
+    flexShrink: 1,
+  },
+  aiScoreRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  aiScoreNumber: {
+    fontFamily: FontFamily.bold,
+    fontSize: 16.5,
+    lineHeight: 20,
+  },
+  aiScoreMax: {
+    fontFamily: FontFamily.medium,
+    fontSize: 11.5,
+    color: '#94A3B8',
+  },
+  aiProgressTrack: {
+    height: 5,
+    borderRadius: 999,
+    backgroundColor: '#EEF2F7',
+    overflow: 'hidden',
+  },
+  aiProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+  },
+  aiBottomRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
   },
   aiStripText: {
+    flex: 1,
     fontFamily: FontFamily.regular,
     fontSize: 12,
-    lineHeight: 16.5,
+    lineHeight: 16,
     color: Colors.textSecondary,
   },
-  aiChevronCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#DCE8FF',
-    alignItems: 'center',
-    justifyContent: 'center',
+  aiActionLinkText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+    color: Colors.primary,
   },
   sectionHeader: {
     flexDirection: 'row',

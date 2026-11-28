@@ -101,7 +101,11 @@ function addMonthsToDate(base: Date, months: number): Date {
 }
 
 export default function GoalFormScreen() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, name: paramName, targetAmount: paramTargetAmount } = useLocalSearchParams<{
+    id?: string;
+    name?: string;
+    targetAmount?: string;
+  }>();
   const isEdit = Boolean(id);
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -115,9 +119,11 @@ export default function GoalFormScreen() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleteWithBalanceOpen, setDeleteWithBalanceOpen] = useState(false);
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => (!isEdit && paramName ? paramName : ''));
   const [nameFocused, setNameFocused] = useState(false);
-  const [targetText, setTargetText] = useState('');
+  const [targetText, setTargetText] = useState(() =>
+    !isEdit && paramTargetAmount ? formatThousands(paramTargetAmount) : ''
+  );
   const [targetFocused, setTargetFocused] = useState(false);
   const [currentText, setCurrentText] = useState('');
   const [currentFocused, setCurrentFocused] = useState(false);

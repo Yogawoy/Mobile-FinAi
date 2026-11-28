@@ -14,11 +14,13 @@ import {
   type AiWalletOption,
   type ChatActionCard,
   type ChatChoiceCard,
+  type ChatDraftCard,
   type ChatSummaryCard,
 } from '@/services/ai.service';
 import { budgetService } from '@/services/budget.service';
 import { goalService } from '@/services/goal.service';
 import { transactionService } from '@/services/transaction.service';
+import { getWalletTheme, resolveWalletColorKey } from '@/lib/walletTheme';
 import { Colors, FontFamily, Radius, Typography } from '@/theme/tokens';
 import { useRouter, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -32,8 +34,9 @@ import {
   RefreshCw,
   RotateCcw,
   Sparkles,
+  Wallet,
 } from 'lucide-react-native';
-import React, { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -206,10 +209,13 @@ function StructuredActionCard({
 function StructuredSummaryCard({
   card,
   onOpenBudget,
+  onOpenGoal,
 }: {
   card: ChatSummaryCard;
   onOpenBudget?: (budgetId: string) => void;
+  onOpenGoal?: (goalId: string) => void;
 }) {
+  const isGoalSummary = /tabungan|target/i.test(card.title);
   const getBudgetToneColor = (tone?: 'green' | 'amber' | 'red') => {
     if (tone === 'red') return '#DC2626';
     if (tone === 'amber') return '#D97706';
@@ -248,7 +254,7 @@ function StructuredSummaryCard({
         <View style={styles.itemsWrap}>
           {(card.items.some((it) => Boolean(it.usableText))
             ? card.items
-            : card.items.slice(0, 4)
+            : card.items.slice(0, 5)
           ).map((it, idx) => {
             if (it.usableText) {
               const rowContent = (
@@ -317,6 +323,52 @@ function StructuredSummaryCard({
               );
             }
 
+            if (it.subtitle) {
+              const content = (
+                <>
+                  <View style={styles.budgetItemLeft}>
+                    <Text style={styles.budgetItemTitle} numberOfLines={1}>
+                      {it.label}
+                    </Text>
+                    <Text
+                      style={[styles.budgetUsageText, Typography.tabularNums]}
+                      numberOfLines={1}
+                    >
+                      {it.subtitle}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[styles.itemValue, Typography.tabularNums]}
+                    numberOfLines={1}
+                  >
+                    {it.value}
+                  </Text>
+                </>
+              );
+
+              if (it.id && isGoalSummary && onOpenGoal) {
+                return (
+                  <TouchableOpacity
+                    key={it.id}
+                    activeOpacity={0.7}
+                    onPress={() => onOpenGoal(it.id!)}
+                    style={[styles.budgetItemRow, idx > 0 && styles.itemRowDivider]}
+                  >
+                    {content}
+                  </TouchableOpacity>
+                );
+              }
+
+              return (
+                <View
+                  key={`${it.label}-${idx}`}
+                  style={[styles.budgetItemRow, idx > 0 && styles.itemRowDivider]}
+                >
+                  {content}
+                </View>
+              );
+            }
+
             return (
               <View
                 key={`${it.label}-${idx}`}
@@ -356,32 +408,187 @@ function StructuredSummaryCard({
 function StructuredChoiceCard({
   card,
   disabled,
+  wallets,
   onSelect,
 }: {
   card: ChatChoiceCard;
   disabled: boolean;
+  wallets: Array<{
+    name: string;
+    type: Parameters<typeof getWalletTheme>[0];
+    colorKey?: Parameters<typeof getWalletTheme>[1];
+  }>;
   onSelect: (messageToSend: string) => void;
 }) {
   return (
-    <View style={styles.structuredCard}>
-      <Text style={styles.choiceTitle}>{card.title}</Text>
-      <View style={styles.choiceWrap}>
-        {card.options.map((opt, idx) => (
-          <TouchableOpacity
-            key={`${opt.label}-${idx}`}
-            activeOpacity={0.75}
-            disabled={disabled}
-            onPress={() => onSelect(opt.messageToSend)}
-            style={[styles.choicePill, disabled && styles.choicePillDisabled]}
-          >
-            <Text style={styles.choicePillText}>{opt.label}</Text>
-            {opt.sublabel ? (
-              <Text style={[styles.choiceSublabel, Typography.tabularNums]}>
-                {opt.sublabel}
+    <View style={[styles.structuredCard, styles.choiceCard]}>
+      <HorizontalScrollStrip
+        label={card.title}
+        labelStyle={styles.choiceTitle}
+        fadeColor="#FFFFFF"
+        contentContainerStyle={styles.choiceScrollContent}
+      >
+        {card.options.map((opt, idx) => {
+          const matchedWallet = wallets.find(
+            (w) => w.name.toLowerCase() === opt.label.toLowerCase()
+          );
+          const isWalletOption =
+            opt.kind === 'wallet' || Boolean(opt.color) || Boolean(matchedWallet);
+
+          if (isWalletOption) {
+            const rawColor = opt.color?.trim() ?? '';
+            const isHex = /^#[0-9a-f]{6}$/i.test(rawColor);
+            const accentColor = matchedWallet
+              ? getWalletTheme(matchedWallet.type, matchedWallet.colorKey).primary
+              : isHex
+                ? rawColor
+                : rawColor
+                  ? getWalletTheme(
+                      'BANK',
+                      resolveWalletColorKey(rawColor, 'BANK')
+                    ).primary
+                  : '#2563EB';
+
+            return (
+              <TouchableOpacity
+                key={`${opt.label}-${idx}`}
+                activeOpacity={0.75}
+                disabled={disabled}
+                onPress={() => onSelect(opt.messageToSend)}
+                style={[
+                  styles.walletChoicePill,
+                  {
+                    backgroundColor: `${accentColor}14`,
+                    borderColor: `${accentColor}55`,
+                  },
+                  disabled && styles.choicePillDisabled,
+                ]}
+              >
+                <View style={styles.walletChoiceTopRow}>
+                  <View
+                    style={[
+                      styles.walletChoiceIconBadge,
+                      { backgroundColor: `${accentColor}1F` },
+                    ]}
+                  >
+                    <Wallet size={14} color={accentColor} strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.walletChoiceName} numberOfLines={1}>
+                    {opt.label}
+                  </Text>
+                </View>
+                {opt.sublabel ? (
+                  <Text
+                    style={[
+                      styles.walletChoiceBalance,
+                      Typography.tabularNums,
+                      { color: accentColor },
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {opt.sublabel}
+                  </Text>
+                ) : null}
+              </TouchableOpacity>
+            );
+          }
+
+          const isPrimary = idx === 0 && /^buat\s+/i.test(opt.label.trim());
+          return (
+            <TouchableOpacity
+              key={`${opt.label}-${idx}`}
+              activeOpacity={0.75}
+              disabled={disabled}
+              onPress={() => onSelect(opt.messageToSend)}
+              style={[
+                styles.choicePill,
+                isPrimary && styles.choicePillPrimary,
+                disabled && styles.choicePillDisabled,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.choicePillText,
+                  isPrimary && styles.choicePillTextPrimary,
+                ]}
+                numberOfLines={1}
+              >
+                {opt.label}
               </Text>
-            ) : null}
-          </TouchableOpacity>
+              {opt.sublabel ? (
+                <Text
+                  style={[styles.choiceSublabel, Typography.tabularNums]}
+                  numberOfLines={1}
+                >
+                  {opt.sublabel}
+                </Text>
+              ) : null}
+            </TouchableOpacity>
+          );
+        })}
+      </HorizontalScrollStrip>
+    </View>
+  );
+}
+
+function StructuredDraftCard({
+  card,
+  disabled,
+  onOpenForm,
+  onCancel,
+}: {
+  card: ChatDraftCard;
+  disabled: boolean;
+  onOpenForm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <View style={styles.structuredCard}>
+      <View style={styles.draftHeaderRow}>
+        <View style={styles.draftBadge}>
+          <Text style={styles.draftBadgeText}>Draf</Text>
+        </View>
+        <Text style={styles.summaryCardTitle} numberOfLines={1}>
+          {card.title}
+        </Text>
+      </View>
+
+      <View style={styles.draftRowsWrap}>
+        {card.rows.map((row, idx) => (
+          <View key={`${row.label}-${idx}`} style={styles.kvRow}>
+            <Text style={styles.kvLabel}>{row.label}</Text>
+            <Text
+              style={[
+                row.isMissing ? styles.draftMissingValue : styles.kvValue,
+                Typography.tabularNums,
+              ]}
+              numberOfLines={1}
+            >
+              {row.value}
+            </Text>
+          </View>
         ))}
+      </View>
+
+      {card.hint ? <Text style={styles.draftHint}>{card.hint}</Text> : null}
+
+      <View style={styles.draftFooterRow}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          disabled={disabled}
+          onPress={onOpenForm}
+          style={[styles.draftPrimaryBtn, disabled && styles.choicePillDisabled]}
+        >
+          <Text style={styles.draftPrimaryBtnText}>Lengkapi di Form</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          disabled={disabled}
+          onPress={onCancel}
+          style={[styles.draftCancelBtn, disabled && styles.choicePillDisabled]}
+        >
+          <Text style={styles.draftCancelBtnText}>Batal</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -505,20 +712,20 @@ export default function AiChatbotScreen() {
 
       const richCard: ChatRichCardType | undefined =
         res.cardType === 'FORECAST' ||
-        res.cardType === 'ANOMALY' ||
-        res.cardType === 'BUDGET' ||
-        res.cardType === 'BUDGET_SET' ||
-        res.cardType === 'BUDGET_UPDATED' ||
-        res.cardType === 'BUDGET_DELETED' ||
-        res.cardType === 'BUDGET_RESET' ||
-        res.cardType === 'SPENDING_BREAKDOWN' ||
-        res.cardType === 'SUMMARY' ||
-        res.cardType === 'GOAL' ||
-        res.cardType === 'WALLET' ||
-        res.cardType === 'FINANCIAL_PLAN' ||
-        res.cardType === 'WALLET_PICKER' ||
-        res.cardType === 'TRANSACTION_PREVIEW' ||
-        res.cardType === 'TRANSACTION_CREATED'
+          res.cardType === 'ANOMALY' ||
+          res.cardType === 'BUDGET' ||
+          res.cardType === 'BUDGET_SET' ||
+          res.cardType === 'BUDGET_UPDATED' ||
+          res.cardType === 'BUDGET_DELETED' ||
+          res.cardType === 'BUDGET_RESET' ||
+          res.cardType === 'SPENDING_BREAKDOWN' ||
+          res.cardType === 'SUMMARY' ||
+          res.cardType === 'GOAL' ||
+          res.cardType === 'WALLET' ||
+          res.cardType === 'FINANCIAL_PLAN' ||
+          res.cardType === 'WALLET_PICKER' ||
+          res.cardType === 'TRANSACTION_PREVIEW' ||
+          res.cardType === 'TRANSACTION_CREATED'
           ? res.cardType
           : res.cardType === 'RECOMMENDATION'
             ? 'RECOMMENDATIONS'
@@ -573,13 +780,13 @@ export default function AiChatbotScreen() {
       prev.map((m) =>
         m.id === msgId && m.cardData
           ? {
-              ...m,
-              cardData: {
-                ...m.cardData,
-                categoryId: category.id,
-                categoryName: category.label,
-              },
-            }
+            ...m,
+            cardData: {
+              ...m.cardData,
+              categoryId: category.id,
+              categoryName: category.label,
+            },
+          }
           : m
       )
     );
@@ -621,14 +828,14 @@ export default function AiChatbotScreen() {
         msg.cardData?.wallets && msg.cardData.wallets.length > 0
           ? msg.cardData.wallets
           : wallets
-              .filter((w) => !w.isArchived)
-              .map((w) => ({
-                id: w.id,
-                name: w.name,
-                type: w.type,
-                currentBalance: w.balance,
-                sufficient: w.balance >= firstSaving,
-              }));
+            .filter((w) => !w.isArchived)
+            .map((w) => ({
+              id: w.id,
+              name: w.name,
+              type: w.type,
+              currentBalance: w.balance,
+              sufficient: w.balance >= firstSaving,
+            }));
       const sourceWallets = rawWallets.filter((w) => w.id !== destWallet.id);
 
       if (firstSaving > 0 && sourceWallets.length > 0) {
@@ -746,30 +953,30 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  actionStatus: 'CONFIRMED',
-                  card: {
-                    type: 'ACTION_CARD',
-                    badge: 'Anggaran Disimpan',
-                    accent: 'blue',
-                    title: data.categoryName || 'Anggaran',
-                    amount: data.amount,
-                    rows: [
-                      {
-                        label: 'Periode',
-                        value:
-                          data.period === 'DAILY'
-                            ? 'Harian'
-                            : data.period === 'WEEKLY'
-                              ? 'Mingguan'
-                              : 'Bulanan',
-                      },
-                    ],
-                    detailRoute: savedBudget?.id
-                      ? { type: 'budget', id: savedBudget.id }
-                      : undefined,
-                  },
-                }
+                ...m,
+                actionStatus: 'CONFIRMED',
+                card: {
+                  type: 'ACTION_CARD',
+                  badge: 'Anggaran Disimpan',
+                  accent: 'blue',
+                  title: data.categoryName || 'Anggaran',
+                  amount: data.amount,
+                  rows: [
+                    {
+                      label: 'Periode',
+                      value:
+                        data.period === 'DAILY'
+                          ? 'Harian'
+                          : data.period === 'WEEKLY'
+                            ? 'Mingguan'
+                            : 'Bulanan',
+                    },
+                  ],
+                  detailRoute: savedBudget?.id
+                    ? { type: 'budget', id: savedBudget.id }
+                    : undefined,
+                },
+              }
               : m
           )
         );
@@ -784,17 +991,17 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  actionStatus: 'CONFIRMED',
-                  card: {
-                    type: 'ACTION_CARD',
-                    badge: 'Anggaran Dihapus',
-                    accent: 'red',
-                    title: data.categoryName || 'Anggaran',
-                    amount: data.amount,
-                    rows: [],
-                  },
-                }
+                ...m,
+                actionStatus: 'CONFIRMED',
+                card: {
+                  type: 'ACTION_CARD',
+                  badge: 'Anggaran Dihapus',
+                  accent: 'red',
+                  title: data.categoryName || 'Anggaran',
+                  amount: data.amount,
+                  rows: [],
+                },
+              }
               : m
           )
         );
@@ -809,17 +1016,17 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  actionStatus: 'CONFIRMED',
-                  card: {
-                    type: 'ACTION_CARD',
-                    badge: 'Tabungan Dihapus',
-                    accent: 'red',
-                    title: data.note || 'Target Tabungan',
-                    amount: data.amount,
-                    rows: [],
-                  },
-                }
+                ...m,
+                actionStatus: 'CONFIRMED',
+                card: {
+                  type: 'ACTION_CARD',
+                  badge: 'Tabungan Dihapus',
+                  accent: 'red',
+                  title: data.note || 'Target Tabungan',
+                  amount: data.amount,
+                  rows: [],
+                },
+              }
               : m
           )
         );
@@ -838,22 +1045,22 @@ export default function AiChatbotScreen() {
           prev.map((m) =>
             m.id === msg.id
               ? {
-                  ...m,
-                  actionStatus: 'CONFIRMED',
-                  card: {
-                    type: 'ACTION_CARD',
-                    badge: 'Setoran Tabungan',
-                    accent: 'green',
-                    title: data.note || 'Setoran Target',
-                    amount: data.amount,
-                    rows: [
-                      ...(data.walletName
-                        ? [{ label: 'Dompet', value: data.walletName }]
-                        : []),
-                    ],
-                    detailRoute: { type: 'goal', id: data.goalId! },
-                  },
-                }
+                ...m,
+                actionStatus: 'CONFIRMED',
+                card: {
+                  type: 'ACTION_CARD',
+                  badge: 'Setoran Tabungan',
+                  accent: 'green',
+                  title: data.note || 'Setoran Target',
+                  amount: data.amount,
+                  rows: [
+                    ...(data.walletName
+                      ? [{ label: 'Dompet', value: data.walletName }]
+                      : []),
+                  ],
+                  detailRoute: { type: 'goal', id: data.goalId! },
+                },
+              }
               : m
           )
         );
@@ -884,32 +1091,32 @@ export default function AiChatbotScreen() {
         prev.map((m) =>
           m.id === msg.id
             ? {
-                ...m,
-                actionStatus: 'CONFIRMED',
-                card: {
-                  type: 'ACTION_CARD',
-                  badge: isTransfer
-                    ? 'Transfer Berhasil'
-                    : isIncome
-                      ? 'Pemasukan Tercatat'
-                      : 'Pengeluaran Tercatat',
-                  accent: isTransfer ? 'blue' : isIncome ? 'green' : 'red',
-                  title: data.note || data.categoryName || 'Transaksi',
-                  amount: data.amount,
-                  rows: [
-                    ...(data.categoryName && !isTransfer
-                      ? [{ label: 'Kategori', value: data.categoryName }]
-                      : []),
-                    ...(data.walletName
-                      ? [{ label: isTransfer ? 'Dari' : 'Dompet', value: data.walletName }]
-                      : []),
-                    ...(data.destinationWalletName && isTransfer
-                      ? [{ label: 'Ke', value: data.destinationWalletName }]
-                      : []),
-                  ].slice(0, 3),
-                  detailRoute: { type: 'transaction', id: created.id },
-                },
-              }
+              ...m,
+              actionStatus: 'CONFIRMED',
+              card: {
+                type: 'ACTION_CARD',
+                badge: isTransfer
+                  ? 'Transfer Berhasil'
+                  : isIncome
+                    ? 'Pemasukan Tercatat'
+                    : 'Pengeluaran Tercatat',
+                accent: isTransfer ? 'blue' : isIncome ? 'green' : 'red',
+                title: data.note || data.categoryName || 'Transaksi',
+                amount: data.amount,
+                rows: [
+                  ...(data.categoryName && !isTransfer
+                    ? [{ label: 'Kategori', value: data.categoryName }]
+                    : []),
+                  ...(data.walletName
+                    ? [{ label: isTransfer ? 'Dari' : 'Dompet', value: data.walletName }]
+                    : []),
+                  ...(data.destinationWalletName && isTransfer
+                    ? [{ label: 'Ke', value: data.destinationWalletName }]
+                    : []),
+                ].slice(0, 3),
+                detailRoute: { type: 'transaction', id: created.id },
+              },
+            }
             : m
         )
       );
@@ -1143,11 +1350,25 @@ export default function AiChatbotScreen() {
                             <StructuredSummaryCard
                               card={msg.card}
                               onOpenBudget={(budgetId) => router.push(`/budget/${budgetId}`)}
+                              onOpenGoal={(goalId) => router.push(`/goal/${goalId}` as Href)}
+                            />
+                          ) : msg.card.type === 'DRAFT_CARD' ? (
+                            <StructuredDraftCard
+                              card={msg.card}
+                              disabled={isTyping}
+                              onOpenForm={() =>
+                                router.push({
+                                  pathname: msg.card!.type === 'DRAFT_CARD' ? msg.card!.formRoute.pathname : '/transaction/form',
+                                  params: msg.card!.type === 'DRAFT_CARD' ? msg.card!.formRoute.params : undefined,
+                                } as Href)
+                              }
+                              onCancel={() => void sendMessage('batal')}
                             />
                           ) : (
                             <StructuredChoiceCard
                               card={msg.card}
                               disabled={Boolean(msg.choiceResolved) || isTyping}
+                              wallets={wallets}
                               onSelect={(text) => void sendMessage(text)}
                             />
                           )}
@@ -1220,7 +1441,9 @@ export default function AiChatbotScreen() {
                   disabled={isTyping}
                   style={styles.promptChip}
                 >
-                  <Text style={styles.promptChipText}>{prompt}</Text>
+                  <Text style={styles.promptChipText} numberOfLines={1}>
+                    {prompt}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </HorizontalScrollStrip>
@@ -1508,7 +1731,7 @@ const styles = StyleSheet.create({
   },
   aiContentCol: {
     flex: 1,
-    maxWidth: '90%',
+    maxWidth: '92%',
     alignItems: 'flex-start',
   },
   aiBubble: {
@@ -1772,36 +1995,148 @@ const styles = StyleSheet.create({
     color: '#1E40AF',
     lineHeight: 18,
   },
+  choiceCard: {
+    width: '100%',
+    overflow: 'hidden',
+  },
   choiceTitle: {
     fontFamily: FontFamily.semibold,
     fontSize: 13.5,
     color: '#0F172A',
   },
-  choiceWrap: {
+  choiceScrollContent: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
+    paddingRight: 10,
   },
   choicePill: {
+    flexShrink: 0,
+    minHeight: 42,
+    justifyContent: 'center',
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 2,
+  },
+  choicePillPrimary: {
+    backgroundColor: '#EBF2FF',
+    borderColor: '#2563EB',
   },
   choicePillDisabled: {
     opacity: 0.55,
   },
   choicePillText: {
     fontFamily: FontFamily.semibold,
-    fontSize: 12.5,
+    fontSize: 13,
     color: '#0F172A',
+  },
+  choicePillTextPrimary: {
+    color: '#2563EB',
   },
   choiceSublabel: {
     fontFamily: FontFamily.medium,
     fontSize: 11,
+    color: '#64748B',
+  },
+  walletChoicePill: {
+    flexShrink: 0,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 5,
+    minWidth: 124,
+  },
+  walletChoiceTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  walletChoiceIconBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  walletChoiceName: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13,
+    color: '#0F172A',
+    flexShrink: 1,
+  },
+  walletChoiceBalance: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 12,
+  },
+  draftHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  draftBadge: {
+    backgroundColor: '#EBF2FF',
+    borderRadius: 99,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  draftBadgeText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 11,
+    color: '#2563EB',
+  },
+  draftRowsWrap: {
+    gap: 8,
+  },
+  draftMissingValue: {
+    flexShrink: 1,
+    fontFamily: FontFamily.medium,
+    fontSize: 12.5,
+    fontStyle: 'italic',
+    color: '#D97706',
+    textAlign: 'right',
+  },
+  draftHint: {
+    fontFamily: FontFamily.regular,
+    fontSize: 12,
+    color: '#64748B',
+  },
+  draftFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 2,
+  },
+  draftPrimaryBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: '#2563EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  draftPrimaryBtnText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  draftCancelBtn: {
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+  },
+  draftCancelBtnText: {
+    fontFamily: FontFamily.semibold,
+    fontSize: 13,
     color: '#64748B',
   },
   unifiedFooter: {
@@ -1812,11 +2147,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   promptsScroll: {
+    flexDirection: 'row',
     paddingHorizontal: 14,
     gap: 8,
     alignItems: 'center',
   },
   promptChip: {
+    flexShrink: 0,
     height: 32,
     backgroundColor: '#F8FAFC',
     borderWidth: 1,

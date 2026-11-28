@@ -395,6 +395,10 @@ function mapBudget(b: BackendBudget): BudgetItem {
     period: b.period ?? 'MONTHLY',
     periodLabel: b.periodLabel,
     monthlyEquivalentLimit: b.monthlyEquivalentLimit,
+    remaining: b.remaining,
+    exceeded: b.exceeded,
+    daysLeftInPeriod: b.daysLeftInPeriod,
+    safeDailyAmount: b.safeDailyAmount,
   };
 }
 

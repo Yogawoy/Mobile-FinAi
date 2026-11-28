@@ -357,6 +357,10 @@ export interface BudgetItem {
   period?: BudgetPeriod;
   periodLabel?: string;
   monthlyEquivalentLimit?: number;
+  remaining?: number;
+  exceeded?: number;
+  daysLeftInPeriod?: number;
+  safeDailyAmount?: number;
 }
 
 export const BUDGET_CATEGORY_OPTIONS: { key: BudgetIconKey; label: string }[] = [

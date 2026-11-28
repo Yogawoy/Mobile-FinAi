@@ -217,6 +217,7 @@ export interface ChatSummaryCard {
   items?: Array<{
     id?: string;
     label: string;
+    subtitle?: string;
     value: string;
     status?: string;
     periodLabel?: 'Harian' | 'Mingguan' | 'Bulanan' | string;
@@ -231,13 +232,31 @@ export interface ChatSummaryCard {
 export interface ChatChoiceCard {
   type: 'CHOICE_CARD';
   title: string;
-  options: Array<{ label: string; sublabel?: string; messageToSend: string }>;
+  options: Array<{
+    label: string;
+    sublabel?: string;
+    messageToSend: string;
+    color?: string;
+    kind?: 'wallet' | 'category' | 'action';
+  }>;
+}
+
+export interface ChatDraftCard {
+  type: 'DRAFT_CARD';
+  title: string;
+  rows: Array<{ label: string; value: string; isMissing: boolean }>;
+  hint: string;
+  formRoute: {
+    pathname: '/transaction/form' | '/budget/form' | '/goal/form';
+    params?: Record<string, string>;
+  };
 }
 
 export type ChatStructuredCard =
   | ChatActionCard
   | ChatSummaryCard
-  | ChatChoiceCard;
+  | ChatChoiceCard
+  | ChatDraftCard;
 
 export interface BackendChatResponse {
   reply: string;

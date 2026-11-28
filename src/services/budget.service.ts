@@ -22,6 +22,10 @@ export interface BackendBudget {
   monthlyEquivalentLimit?: number;
   spentAmount: number;
   remainingAmount: number;
+  remaining?: number;
+  exceeded?: number;
+  daysLeftInPeriod?: number;
+  safeDailyAmount?: number;
   percentage: number;
   alertThresholdPct: number;
   status: 'SAFE' | 'WARNING' | 'OVER_BUDGET';

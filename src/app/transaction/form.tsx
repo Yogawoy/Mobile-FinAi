@@ -112,6 +112,9 @@ export default function TransactionFormScreen() {
     type?: TransactionMode;
     walletId?: string;
     categoryKey?: string;
+    categoryId?: string;
+    amount?: string;
+    description?: string;
   }>();
   const isEdit = Boolean(params.id);
   const router = useRouter();
@@ -151,7 +154,9 @@ export default function TransactionFormScreen() {
       ? params.type
       : 'EXPENSE'
   );
-  const [amountText, setAmountText] = useState('');
+  const [amountText, setAmountText] = useState(() =>
+    !isEdit && params.amount ? formatThousands(params.amount) : ''
+  );
   const [amountFocused, setAmountFocused] = useState(false);
   const [walletId, setWalletId] = useState<string>(
     params.walletId || activeWallets[0]?.id || ''
@@ -159,12 +164,16 @@ export default function TransactionFormScreen() {
   const [targetWalletId, setTargetWalletId] = useState<string>(
     activeWallets.find((w) => w.id !== (params.walletId || activeWallets[0]?.id))?.id || ''
   );
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(
+    !isEdit && params.categoryId ? params.categoryId : ''
+  );
   const [selectedDate, setSelectedDate] = useState<Date>(() =>
     startOfLocalDay(new Date())
   );
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [note, setNote] = useState('');
+  const [note, setNote] = useState(() =>
+    !isEdit && params.description ? params.description : ''
+  );
   const [noteFocused, setNoteFocused] = useState(false);
 
   const [originalTx, setOriginalTx] = useState<{
